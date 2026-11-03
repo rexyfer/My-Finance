@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>My Finance - Laporan</title>
+<style>
+:root{--bg:#f2f2f7;--card:#fff;--tx:#1c1c1e;--sub:#8e8e93;--line:#e5e5ea;--in:#1f9d55;--out:#e0443a;--acc:#0a6e6e}
+@media(prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--tx:#f2f2f7;--sub:#98989f;--line:#2c2c2e;--in:#35c46f;--out:#ff6961;--acc:#4fd1c5}}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--tx);font:16px/1.4 -apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 0 calc(24px + env(safe-area-inset-bottom))}
+.wrap{max-width:480px;margin:0 auto;padding:12px 16px}
+a{color:var(--acc)}h1{font-size:28px;letter-spacing:-.5px;margin:6px 0 12px}h2{font-size:17px;margin:20px 0 8px}
+.card{background:var(--card);border-radius:18px;padding:16px;margin-bottom:12px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}.row:first-child{border-top:0}
+.sub{color:var(--sub);font-size:13px}.in{color:var(--in)}.out{color:var(--out)}
+.seg{display:flex;background:var(--line);border-radius:10px;padding:2px;margin-bottom:14px}
+.seg button{flex:1;border:0;background:none;color:var(--tx);padding:8px;border-radius:8px;font:600 14px system-ui}.seg button.on{background:var(--card)}
+input,select{width:100%;font:16px system-ui;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--tx);margin-bottom:10px}
+.btn{width:100%;border:0;border-radius:14px;padding:14px;font:600 16px system-ui;background:var(--acc);color:#fff;margin-bottom:8px}.btn.g{background:var(--line);color:var(--tx)}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:4px}.bar i{display:block;height:100%;background:var(--acc)}
+.note{background:var(--line);border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+svg text{fill:var(--sub);font:10px system-ui}
+@media print{.no{display:none!important}body{background:#fff;color:#000}.card{border:1px solid #ccc}}
+</style></head>
+<body><div class="wrap" id="app"></div>
+<script type="module">
+import {createClient} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+import {SUPABASE_URL,SUPABASE_KEY} from './config.js';
+const sb=createClient(SUPABASE_URL,SUPABASE_KEY),$=id=>document.getElementById(id),D=864e5;
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rp=n=>(n<0?'-':'')+'Rp'+Math.abs(n).toLocaleString('id-ID');
+const SP={personal:'Personal',business:'Business'},PLUS=['in','transfer_in','debt_in'];
+const KL={in:'Pemasukan',out:'Pengeluaran',transfer_in:'Transfer masuk',transfer_out:'Transfer keluar',debt_in:'Penerimaan piutang',debt_out:'Pembayaran utang'};
+const MN=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+const pad=n=>String(n).padStart(2,'0'),ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()),dstr=t=>{const d=new Date(t);return d.getDate()+' '+MN[d.getMonth()]};
+const now=new Date();
+let S={space:'personal',tab:'g',p:'m',m:now.getFullYear()+'-'+pad(now.getMonth()+1),y:now.getFullYear(),c1:ymd(new Date(now.getFullYear(),now.getMonth(),1)),c2:ymd(now),acc:[],cat:[],tx:[],debts:[],pays:[],ok:false,msg:''};
+
+async function all(t){let o=[],f=0;for(;;){const r=await sb.from(t).select('*').order('id').range(f,f+999);if(r.error)throw r.error;o=o.concat(r.data);if(r.data.length<1000)return o;f+=1000}}
+const T=()=>S.tx.filter(x=>x.space===S.space),A=()=>S.acc.filter(a=>a.space===S.space),ms=x=>+new Date(x.occurred_at);
+const eff=x=>PLUS.includes(x.kind)?x.amount:-x.amount;
+const sa=(ks,a,b)=>T().filter(x=>ks.includes(x.kind)&&ms(x)>=a&&ms(x)<b).reduce((s,x)=>s+x.amount,0);
+const bal=t=>A().reduce((s,a)=>s+a.opening_balance,0)+T().filter(x=>ms(x)<t).reduce((s,x)=>s+eff(x),0);
+const accBal=a=>a.opening_balance+S.tx.filter(x=>x.account_id===a.id).reduce((s,x)=>s+eff(x),0);
+const monthTx=(a,b)=>T().filter(x=>ms(x)>=a&&ms(x)<b).sort((p,q)=>ms(p)-ms(q));
+const mrange=()=>{const [y,m]=S.m.split('-').map(Number);return[+new Date(y,m-1,1),+new Date(y,m,1)]};
+function rng(){const d0=+new Date(now.getFullYear(),now.getMonth(),now.getDate());
+ if(S.p==='w')return[d0-6*D,d0+D];if(S.p==='y')return[+new Date(S.y,0,1),+new Date(S.y+1,0,1)];
+ if(S.p==='c'){const a=+new Date(S.c1+'T00:00'),b=+new Date(S.c2+'T00:00')+D;if(a<b)return[a,b]}
+ return mrange()}
+const bks=(s,e)=>{const n=Math.round((e-s)/D),o=[];
+ if(n<=14)for(let t=s;t<e;t+=D)o.push([t,t+D,new Date(t).getDate()+'']);
+ else if(n<=62)for(let t=s;t<e;t+=7*D)o.push([t,Math.min(e,t+7*D),dstr(t)]);
+ else for(let d=new Date(new Date(s).getFullYear(),new Date(s).getMonth(),1);+d<e;d=new Date(d.getFullYear(),d.getMonth()+1,1))o.push([Math.max(s,+d),Math.min(e,+new Date(d.getFullYear(),d.getMonth()+1,1)),MN[d.getMonth()]]);
+ return o};
+const lab=(i,n,l,x)=>n<=14||i%Math.ceil(n/8)===0?`<text x='${x}' y='128'>${l}</text>`:'';
+function barSvg(b){const v=b.map(k=>[sa(['in'],k[0],k[1]),sa(['out'],k[0],k[1]),k[2]]),mx=Math.max(1,...v.map(z=>Math.max(z[0],z[1]))),w=300/b.length;
+ return `<svg viewBox='0 0 320 140' width='100%'>${v.map((z,i)=>{const x=10+i*w,bw=Math.max(2,w/2-2),a=z[0]/mx*100,c=z[1]/mx*100;return `<rect x='${x}' y='${110-a}' width='${bw}' height='${a}' rx='2' fill='var(--in)'/><rect x='${x+bw+1}' y='${110-c}' width='${bw}' height='${c}' rx='2' fill='var(--out)'/>${lab(i,b.length,z[2],x)}`}).join('')}</svg>`}
+function lineSvg(vals,ls,col){const mn=Math.min(0,...vals),mx=Math.max(1,...vals),w=300/Math.max(1,vals.length-1),y=v=>105-(v-mn)/(mx-mn||1)*95;
+ return `<svg viewBox='0 0 320 140' width='100%'><line x1='10' x2='310' y1='${y(0)}' y2='${y(0)}' stroke='var(--line)'/><polyline points='${vals.map((v,i)=>`${10+i*w},${y(v)}`).join(' ')}' fill='none' stroke='${col}' stroke-width='2.5' stroke-linejoin='round'/>${vals.map((v,i)=>`<circle cx='${10+i*w}' cy='${y(v)}' r='2.5' fill='${col}'/>`).join('')}${ls.map((l,i)=>lab(i,ls.length,l,10+i*w)).join('')}</svg>`}
+const catRows=(k,a,b)=>{const m={};T().filter(x=>x.kind===k&&ms(x)>=a&&ms(x)<b).forEach(x=>{const n=(S.cat.find(c=>c.id===x.category_id)||{}).name||'Tanpa kategori';m[n]=(m[n]||0)+x.amount});
+ const e=Object.entries(m).sort((p,q)=>q[1]-p[1]),t=e.reduce((s,z)=>s+z[1],0)||1;
+ return e.length?e.map(([n,v])=>`<div style='margin:8px 0'><div class='row' style='border:0;padding:0'><span>${esc(n)}</span><b>${rp(v)}</b></div><div class='bar'><i style='width:${v/t*100}%'></i></div></div>`).join(''):`<p class='sub'>Belum ada data pada periode ini.</p>`};
+const dist=()=>{const t=A().reduce((s,a)=>s+accBal(a),0)||1;return A().map(a=>`<div style='margin:8px 0'><div class='row' style='border:0;padding:0'><span>${esc(a.name)}</span><span class='sub'>${Math.round(accBal(a)/t*100)}% · ${rp(accBal(a))}</span></div><div class='bar'><i style='width:${Math.max(0,accBal(a)/t*100)}%'></i></div></div>`).join('')||`<p class='sub'>Belum ada akun.</p>`};
+
+function vG(){const [a,b]=rng(),bk=bks(a,b),net=bk.map(k=>sa(['in'],k[0],k[1])-sa(['out'],k[0],k[1])),tr=bk.map(k=>bal(k[1])),ls=bk.map(k=>k[2]),
+ ys=[...new Set(S.tx.map(x=>new Date(x.occurred_at).getFullYear()).concat(now.getFullYear()))].sort((p,q)=>q-p);
+ return `<div class='seg no'>${[['w','Mingguan'],['m','Bulanan'],['y','Tahunan'],['c','Rentang']].map(p=>`<button data-p='${p[0]}' class='${S.p===p[0]?'on':''}'>${p[1]}</button>`).join('')}</div>
+${S.p==='m'?`<input class='no' type='month' id='m' value='${S.m}'>`:''}${S.p==='y'?`<select class='no' id='y'>${ys.map(y=>`<option ${y===S.y?'selected':''}>${y}</option>`).join('')}</select>`:''}${S.p==='c'?`<div class='grid no'><div><div class='sub'>Dari</div><input type='date' id='c1' value='${S.c1}'></div><div><div class='sub'>Sampai</div><input type='date' id='c2' value='${S.c2}'></div></div>`:''}
+<div class='sub'>${dstr(a)} - ${dstr(b-D)}</div>
+<h2>Pemasukan vs pengeluaran</h2><div class='card'>${barSvg(bk)}<div class='sub'>Hijau: masuk · Merah: keluar</div></div>
+<h2>Arus kas bersih</h2><div class='card'>${lineSvg(net,ls,'var(--acc)')}</div>
+<h2>Tren saldo</h2><div class='card'>${lineSvg(tr,ls,'var(--in)')}</div>
+<h2>Pengeluaran per kategori</h2><div class='card'>${catRows('out',a,b)}</div>
+<h2>Distribusi saldo antar-akun</h2><div class='card'>${dist()}</div>`}
+
+function vR(){const [a,b]=mrange(),bz=S.space==='business',ti=sa(['in'],a,b),to=sa(['out'],a,b),tn=sa(['transfer_in'],a,b)-sa(['transfer_out'],a,b),dn=sa(['debt_in'],a,b)-sa(['debt_out'],a,b),
+ R=(l,v,c)=>`<div class='row'><span>${l}</span><b class='${c||''}'>${rp(v)}</b></div>`,
+ paid=d=>S.pays.filter(p=>p.debt_id===d.id).reduce((s,p)=>s+p.amount,0),rem=k=>S.debts.filter(d=>d.space===S.space&&d.kind===k).reduce((s,d)=>s+d.amount-paid(d),0),
+ an=id=>esc((S.acc.find(z=>z.id===id)||{}).name||'-'),cn=x=>esc((S.cat.find(c=>c.id===x.category_id)||{}).name||KL[x.kind]);
+ return `<input class='no' type='month' id='m' value='${S.m}'>
+<h2>Laporan ${SP[S.space]} · ${S.m}</h2><div class='card'>${R('Saldo awal periode',bal(a))}${R(bz?'Omzet tercatat':'Total pemasukan',ti,'in')}${R(bz?'Biaya tercatat':'Total pengeluaran',to,'out')}${R(bz?'Arus kas bersih (bukan laba bersih)':'Arus kas bersih',ti-to)}${R('Transfer (bukan pemasukan/pengeluaran)',tn)}${R('Pembayaran utang/piutang (pokok)',dn)}${R('Saldo akhir periode',bal(b))}</div>
+${bz?`<div class='note'>Arus kas bersih bukan laba bersih, karena belum ada pencatatan persediaan, harga pokok penjualan, dan penyesuaian akuntansi.</div>`:''}
+<h2>Rincian pemasukan</h2><div class='card'>${catRows('in',a,b)}</div><h2>Rincian pengeluaran</h2><div class='card'>${catRows('out',a,b)}</div>
+<h2>Utang dan piutang (sisa saat ini)</h2><div class='grid'><div class='card'><span class='sub'>Utang saya</span><div class='out'><b>${rp(rem('payable'))}</b></div></div><div class='card'><span class='sub'>Piutang</span><div class='in'><b>${rp(rem('receivable'))}</b></div></div></div>
+<h2>Daftar transaksi</h2><div class='card'>${monthTx(a,b).map(x=>`<div class='row'><div><b>${cn(x)}</b><div class='sub'>${dstr(ms(x))} · ${an(x.account_id)}${x.note?' · '+esc(x.note):''}</div></div><b class='${x.kind==='in'?'in':x.kind==='out'?'out':''}'>${PLUS.includes(x.kind)?'+':'-'}${rp(x.amount)}</b></div>`).join('')||`<p class='sub'>Tidak ada transaksi pada bulan ini.</p>`}</div>
+<button class='btn no' data-a='csv'>Unduh CSV</button><button class='btn g no' data-a='print'>Cetak / simpan PDF</button>`}
+
+function csv(){const [a,b]=mrange(),q=String.fromCharCode(34),cs=s=>q+String(s??'').split(q).join(q+q)+q,
+ an=id=>(S.acc.find(z=>z.id===id)||{}).name||'',cn=x=>(S.cat.find(c=>c.id===x.category_id)||{}).name||'',
+ rows=[['tanggal','ruang','jenis','kategori','akun','nominal_rupiah','catatan']].concat(monthTx(a,b).map(x=>[ymd(new Date(x.occurred_at)),SP[x.space],KL[x.kind],cn(x),an(x.account_id),x.amount,x.note||'']));
+ const l=document.createElement('a');l.href=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(cs).join(',')).join('\n')],{type:'text/csv'}));l.download='my-finance-'+S.space+'-'+S.m+'.csv';document.body.appendChild(l);l.click();l.remove()}
+
+function render(){
+ if(!S.ok){$('app').innerHTML=`<h1>My Finance</h1><div class='card'>${esc(S.msg)}<br><br><a href='./'>Buka halaman utama untuk masuk</a></div>`;return}
+ $('app').innerHTML=`<a class='no sub' href='./'>← Kembali ke My Finance</a><h1>Grafik & laporan</h1>
+<div class='seg no'>${Object.keys(SP).map(k=>`<button data-sp='${k}' class='${S.space===k?'on':''}'>${SP[k]}</button>`).join('')}</div>
+<div class='seg no'><button data-tab='g' class='${S.tab==='g'?'on':''}'>Grafik</button><button data-tab='r' class='${S.tab==='r'?'on':''}'>Laporan</button></div>${S.tab==='g'?vG():vR()}`}
+
+document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;
+ if(d.sp){S.space=d.sp;render()}else if(d.tab){S.tab=d.tab;render()}else if(d.p){S.p=d.p;render()}
+ else if(d.a==='csv')csv();else if(d.a==='print')window.print()});
+document.addEventListener('change',e=>{const i=e.target.id;if(i==='m'&&e.target.value)S.m=e.target.value;else if(i==='y')S.y=+e.target.value;else if(i==='c1'||i==='c2')S[i]=e.target.value;else return;render()});
+(async()=>{const s=await sb.auth.getSession();if(!s.data.session){S.msg='Anda belum masuk.';return render()}
+ try{[S.acc,S.cat,S.tx,S.debts,S.pays]=await Promise.all(['accounts','categories','transactions','debts','debt_payments'].map(all));S.ok=true}catch(e){S.msg='Gagal memuat data: '+e.message}render()})();
+</script></body></html>
