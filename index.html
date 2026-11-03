@@ -47,7 +47,7 @@ const SP={personal:'Personal',business:'Business'};
 const KL={in:'Pemasukan',out:'Pengeluaran',transfer_in:'Transfer masuk',transfer_out:'Transfer keluar',debt_in:'Penerimaan piutang',debt_out:'Pembayaran utang'};
 const PLUS=['in','transfer_in','debt_in'];
 let S={space:'personal',user:null,acc:[],accAll:[],mid:null,cat:[],tx:[],debts:[],pays:[],hub:'',ha:'btc',hold:[],holdErr:'',pxE:{btc:'',gold:''},px:{btc:{p:0,t:0,src:''},gold:{p:0,t:0,src:''}},msg:'',off:0,real:false,busy:false,req:null,pid:null,eid:null};
-const openS=h=>{S.hub='';$('sf').innerHTML=h;$('sheet').classList.add('show')},closeS=()=>{S.hub='';$('sheet').classList.remove('show')},fm=m=>{if($('fm'))$('fm').textContent=m},amsg=m=>{if($('msg'))$('msg').textContent=m};
+const openS=h=>{S.hub='';S.dk='';$('sf').innerHTML=h;$('sheet').classList.add('show')},closeS=()=>{S.hub='';S.dk='';$('sheet').classList.remove('show')},fm=m=>{if($('fm'))$('fm').textContent=m},amsg=m=>{if($('msg'))$('msg').textContent=m};
 try{const x=JSON.parse(localStorage.getItem('mf_px'));if(x){for(const k of ['btc','gold'])if(x[k]&&x[k].p>0)S.px[k]=x[k]}else{const y=JSON.parse(localStorage.getItem('mf_btc'));if(y&&y.p>0)S.px.btc=y}}catch(e){}
 const CK='mf_cache_v1';
 const saveCache=()=>{try{localStorage.setItem(CK,JSON.stringify({uid:S.user.id,t:Date.now(),accAll:S.accAll,cat:S.cat,tx:S.tx,debts:S.debts,pays:S.pays,hold:S.hold}))}catch(e){}};
@@ -102,10 +102,16 @@ async function fetchPx(){if(!navigator.onLine){S.pxE.btc=S.pxE.gold='offline';re
  savePx();updPrice()}
 const dueTxt=(r,due)=>{if(!(r>0&&due))return '';const dd=Math.ceil((new Date(due+'T00:00')-new Date().setHours(0,0,0,0))/864e5);return `<div class="sub ${dd<=3?'out':''}">${dd<0?'Lewat '+(-dd)+' hari':dd===0?'Jatuh tempo hari ini':dd+' hari lagi'} (${esc(due)})</div>`};
 function debtGroups(D){const m=new Map();[...D].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).forEach(d=>{const k=d.kind+'|'+d.party.trim().toLowerCase();if(!m.has(k))m.set(k,[]);m.get(k).push(d)});return [...m.values()]}
-function groupCard(G){const f=G[0],pay=f.kind==='payable',tot=G.reduce((s,d)=>s+d.amount,0),pd=G.reduce((s,d)=>s+paidOf(d),0),r=tot-pd,st=r<=0?'Lunas':pd>0?'Sebagian lunas':'Belum lunas';
- return `<div class="card"><div class="row"><div><b>${esc(f.party)}</b><div class="sub">${pay?'Utang saya':'Piutang'}${G.length>1?' · '+G.length+' catatan':''}</div></div><b class="${pay?'out':'in'}">${rp(r)}</b></div><div class="sub">${st} · dibayar ${rp(pd)} dari ${rp(tot)}</div>`+
- G.map((d,i)=>{const p1=paidOf(d),r1=d.amount-p1;return `<div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px"><div class="row" style="border:0;padding:0"><span class="sub">${G.length>1?'Catatan '+(i+1)+' · ':''}${new Date(d.created_at).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})} · ${rp(d.amount)}</span><b class="${pay?'out':'in'}">${r1<=0?'Lunas':'Sisa '+rp(r1)}</b></div>${dueTxt(r1,d.due_date)}${d.note?`<div class="sub">${esc(d.note)}</div>`:''}${S.pays.filter(p=>p.debt_id===d.id).map(p=>`<div class="row"><span class="sub">${new Date(p.paid_at).toLocaleDateString('id-ID',{day:'numeric',month:'short'})} · ${rp(p.amount)}</span><button class="del" data-unpay="${p.transaction_id}">Batalkan</button></div>`).join('')}${r1>0?`<button class="btn g" data-pay="${d.id}" style="margin-top:8px">${pay?'Catat pembayaran':'Catat penerimaan'}${G.length>1?' (catatan '+(i+1)+')':''}</button>`:''}${p1===0?`<button class="del" data-deldebt="${d.id}">Hapus catatan ini</button>`:''}</div>`}).join('')+
- `<button class="btn g" data-addto="${f.id}" style="margin-top:10px">+ Tambah lagi untuk ${esc(f.party)}</button></div>`}
+const groupKey=G=>G[0].kind+'|'+G[0].party.trim().toLowerCase();
+const gStat=G=>{const tot=G.reduce((s,d)=>s+d.amount,0),pd=G.reduce((s,d)=>s+paidOf(d),0),r=tot-pd;return{tot,pd,r,st:r<=0?'Lunas':pd>0?'Sebagian lunas':'Belum lunas'}};
+function groupSummary(G){const f=G[0],pay=f.kind==='payable',{r,st}=gStat(G);
+ return `<button class="card" data-dg="${esc(groupKey(G))}" style="display:block;width:100%;text-align:left;border:0;color:var(--tx);font:inherit"><div class="row" style="border:0;padding:0"><div><b>${esc(f.party)}</b><div class="sub">${pay?'Utang saya':'Piutang'} · ${G.length} catatan</div></div><div style="text-align:right"><b class="${pay?'out':'in'}">${rp(r)}</b><div class="sub">${st} ›</div></div></div></button>`}
+function groupDetail(G){const f=G[0],pay=f.kind==='payable',{tot,pd,r,st}=gStat(G);
+ return `<h2 style="margin-top:0">${esc(f.party)}</h2><div class="card"><div class="row" style="border:0;padding:0"><div><span>${pay?'Utang saya':'Piutang'}</span><div class="sub">${st} · dibayar ${rp(pd)} dari ${rp(tot)}</div></div><b class="${pay?'out':'in'}">${rp(r)}</b></div>`+
+ G.map((d,i)=>{const p1=paidOf(d),r1=d.amount-p1;return `<div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px"><div class="row" style="border:0;padding:0"><span class="sub">Catatan ${i+1} · ${new Date(d.created_at).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})} · ${rp(d.amount)}</span><b class="${pay?'out':'in'}">${r1<=0?'Lunas':'Sisa '+rp(r1)}</b></div>${dueTxt(r1,d.due_date)}${d.note?`<div class="sub">${esc(d.note)}</div>`:''}${S.pays.filter(p=>p.debt_id===d.id).map(p=>`<div class="row"><span class="sub">${new Date(p.paid_at).toLocaleDateString('id-ID',{day:'numeric',month:'short'})} · ${rp(p.amount)}</span><button class="del" data-unpay="${p.transaction_id}">Batalkan</button></div>`).join('')}${r1>0?`<button class="btn g" data-pay="${d.id}" style="margin-top:8px">${pay?'Catat pembayaran':'Catat penerimaan'} (catatan ${i+1})</button>`:''}${p1===0?`<button class="del" data-deldebt="${d.id}">Hapus catatan ini</button>`:''}</div>`}).join('')+
+ `</div><button class="btn" data-addto="${f.id}">+ Tambah catatan baru</button><div class="sub" style="margin-bottom:8px">Di formulir, nama dan jenis sudah terisi. Anda bisa menggantinya untuk orang lain.</div><button class="btn g" data-a="close">Tutup</button>`}
+function openDG(k){const G=debtGroups(S.debts.filter(x=>x.space===S.space)).find(g=>groupKey(g)===k);if(!G)return;openS(groupDetail(G));S.dk=k}
+function backDetail(){const k=S.ret;S.ret='';if(k)openDG(k)}
 
 function render(){
  if(!S.user){$('app').innerHTML=`<h1>My Finance</h1><div class="card"><input id="em" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Kata sandi (minimal 8 karakter)" autocomplete="current-password"><button class="btn" data-a="in">Masuk</button><button class="btn g" data-a="up">Daftar akun baru</button><div class="msg" id="msg">${esc(S.msg)}</div></div>`;return}
@@ -128,9 +134,9 @@ function render(){
 <h2>Akun</h2><div class="card">${(opts(A,a=>`<div class="row"><div><b>${esc(a.name)}</b><div class="sub">${esc(a.type)}</div></div><div style="text-align:right"><b>${rp(Number(a.balance))}</b><div><button class="del" data-mng="${a.id}" style="color:var(--acc)">Kelola</button></div></div></div>`)+btcRow)||'<p class="sub">Belum ada akun. Tekan Tambah akun.</p>'}</div>
 <button class="btn g" data-a="addacc">Tambah akun</button>
 <h2>Utang dan piutang</h2><div class="grid"><div class="card"><span class="sub">Utang saya</span><div class="out"><b>${rp(rem('payable'))}</b></div></div><div class="card"><span class="sub">Piutang</span><div class="in"><b>${rp(rem('receivable'))}</b></div></div></div>
-${opts(debtGroups(D),groupCard)}<button class="btn g" data-a="adddebt">Tambah utang/piutang</button>
+${opts(debtGroups(D),groupSummary)}<button class="btn g" data-a="adddebt">Tambah utang/piutang (orang baru)</button>
 <h2>Transaksi terbaru</h2><div class="card">${opts(T.slice(0,20),x=>`<div class="row"><div><b>${cn(x)}</b><div class="sub">${new Date(x.occurred_at).toLocaleDateString('id-ID',{day:'numeric',month:'short'})} · ${an(x.account_id)}${x.note?' · '+esc(x.note):''}</div></div><div style="text-align:right"><b class="${x.kind==='in'?'in':x.kind==='out'?'out':''}">${PLUS.includes(x.kind)?'+':'-'}${rp(x.amount)}</b><div>${x.kind==='in'||x.kind==='out'?`<button class="del" data-edit="${x.id}" style="color:var(--acc);margin-right:10px">Ubah</button>`:''}<button class="del" data-del="${x.id}">Hapus</button></div></div></div>`)||'<p class="sub">Belum ada transaksi.</p>'}</div>
-<button class="btn g" data-a="bk">Unduh backup (JSON)</button><a class="btn g" href="./pulihkan.html">Pulihkan dari backup</a><button class="btn g" data-a="out">Keluar</button><div class="msg">${esc(S.msg)}</div>`;if(S.hub)$('sf').innerHTML=hubHtml(S.hub)}
+<button class="btn g" data-a="bk">Unduh backup (JSON)</button><a class="btn g" href="./pulihkan.html">Pulihkan dari backup</a><button class="btn g" data-a="out">Keluar</button><div class="msg">${esc(S.msg)}</div>`;if(S.hub)$('sf').innerHTML=hubHtml(S.hub);else if(S.dk){const G=debtGroups(S.debts.filter(x=>x.space===S.space)).find(g=>groupKey(g)===S.dk),bx=$('sf').parentElement,y=bx.scrollTop;if(G){$('sf').innerHTML=groupDetail(G);bx.scrollTop=y}else closeS()}}
 
 async function auth(m){const email=$('em').value.trim(),password=$('pw').value;
  if(!email||password.length<8)return amsg('Isi email dan kata sandi (minimal 8 karakter).');
@@ -172,7 +178,7 @@ async function saveDebt(){if(S.busy)return;const party=$('dp').value.trim(),amou
  S.busy=true;$('sv').disabled=true;
  const r=await sb.from('debts').insert({space:S.space,kind:$('dk').value,party,amount,due_date:$('dd').value||null,note:$('dn').value.trim()||null});
  S.busy=false;if($('sv'))$('sv').disabled=false;
- if(r.error)return fm('Gagal menyimpan: '+r.error.message);closeS();await load()}
+ if(r.error)return fm('Gagal menyimpan: '+r.error.message);closeS();await load();backDetail()}
 function openPay(id){const d=S.debts.find(x=>x.id===id),A=S.acc.filter(a=>a.space===d.space);if(!A.length){S.msg='Tambahkan akun dulu.';return render()}
  S.req=crypto.randomUUID();S.pid=id;
  openS(`<h2>${d.kind==='payable'?'Bayar utang':'Terima pelunasan'}: ${esc(d.party)}</h2><div class="sub" style="margin-bottom:8px">Sisa ${rp(d.amount-paidOf(d))}</div><input id="pa" inputmode="numeric" placeholder="Nominal (Rp)" autocomplete="off"><select id="pc">${opts(A,a=>`<option value="${a.id}">${esc(a.name)} (${rp(Number(a.balance))})</option>`)}</select><div class="msg" id="fm"></div><button class="btn" id="sv" data-a="savepay">Simpan pembayaran</button><button class="btn g" data-a="close">Batal</button>`)}
@@ -181,7 +187,7 @@ async function savePay(){if(S.busy)return;const amt=num($('pa').value),d=S.debts
  S.busy=true;$('sv').disabled=true;
  const r=await sb.rpc('pay_debt',{p_debt:S.pid,p_account:$('pc').value,p_amount:amt,p_request:S.req});
  S.busy=false;if($('sv'))$('sv').disabled=false;
- if(r.error)return fm(r.error.message);closeS();await load()}
+ if(r.error)return fm(r.error.message);closeS();await load();backDetail()}
 function openMng(id){const a=S.acc.find(x=>x.id===id);if(!a)return;S.mid=id;
  openS(`<h2>Kelola akun</h2><input id="mn" value="${esc(a.name)}" placeholder="Nama akun"><select id="mt">${['Tunai','Bank','E-wallet','Lainnya'].map(t=>`<option${t===a.type?' selected':''}>${t}</option>`).join('')}</select><div class="sub" style="margin-bottom:8px">Saldo sekarang: ${rp(Number(a.balance))}</div><div class="msg" id="fm"></div><button class="btn" id="sv" data-a="mngsave">Simpan perubahan</button><button class="btn g" data-a="mngoff">Nonaktifkan (sembunyikan, riwayat tetap)</button><button class="btn g" data-a="mngdel" style="color:var(--out)">Hapus permanen</button><button class="btn g" data-a="close">Batal</button><div class="sub">Nonaktifkan hanya bisa jika saldo akun Rp0. Hapus permanen hanya bisa jika akun belum punya transaksi, utang, atau pembayaran.</div>`)}
 async function mngSave(){if(S.busy)return;const name=$('mn').value.trim();if(!name)return fm('Isi nama akun.');
@@ -221,7 +227,9 @@ async function backup(){const o={app:'My Finance',version:1,exported_at:new Date
 
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const a=b.dataset.a,d=b.dataset;
  if(S.off&&(d.addto||d.hdel||['hadd','hsave'].includes(a)||d.mng||d.edit||d.del||d.pay||d.unpay||d.deldebt||['addtx','xfer','addacc','adddebt','bk'].includes(a))){S.msg='Sedang offline. Hubungkan internet dulu untuk menyimpan atau mengubah data.';return render()}
+ if(d.pay||d.addto||a==='adddebt')S.ret=S.dk;
  if(d.sp){S.space=d.sp;render()}
+ else if(d.dg)openDG(d.dg)
  else if(d.addto){const x=S.debts.find(z=>z.id===d.addto);if(x)openDebt({kind:x.kind,party:x.party})}
  else if(d.hdel)delHold(d.hdel)
  else if(a==='hubopen')openHub(d.as);else if(a==='hadd')openH();else if(a==='hsave')saveH();else if(a==='pxref')fetchPx();
@@ -236,7 +244,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button');i
  else if(a==='addtx')openTx();else if(a==='xfer')openXf();else if(a==='addacc')openAcc();else if(a==='adddebt')openDebt()
  else if(a==='savetx')saveTx();else if(a==='savexf')saveXf();else if(a==='saveacc')saveAcc();else if(a==='savedebt')saveDebt();else if(a==='savepay')savePay()
  else if(a==='mngsave')mngSave();else if(a==='mngoff')mngOff();else if(a==='mngdel')mngDel();
- else if(a==='close')closeS();else if(a==='bk')backup();else if(a==='out'){try{localStorage.removeItem(CK)}catch(x){}await sb.auth.signOut()}});
+ else if(a==='close'){closeS();backDetail()}else if(a==='bk')backup();else if(a==='out'){try{localStorage.removeItem(CK)}catch(x){}await sb.auth.signOut()}});
 document.addEventListener('change',e=>{if(e.target.id==='kind')fillCat()});
 
 async function start(){if(!navigator.onLine)return load();const r=await sb.rpc('seed_default_categories');if(r.error)S.msg='Kategori bawaan gagal dibuat: '+r.error.message;await load()}
