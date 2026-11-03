@@ -46,9 +46,9 @@ const num=v=>parseInt(String(v).replace(/\D/g,''),10)||0;
 const SP={personal:'Personal',business:'Business'};
 const KL={in:'Pemasukan',out:'Pengeluaran',transfer_in:'Transfer masuk',transfer_out:'Transfer keluar',debt_in:'Penerimaan piutang',debt_out:'Pembayaran utang'};
 const PLUS=['in','transfer_in','debt_in'];
-let S={space:'personal',user:null,acc:[],accAll:[],mid:null,cat:[],tx:[],debts:[],pays:[],hub:false,hold:[],holdErr:'',btcErr:'',btc:{p:0,t:0,src:''},msg:'',off:0,real:false,busy:false,req:null,pid:null,eid:null};
-const openS=h=>{S.hub=false;$('sf').innerHTML=h;$('sheet').classList.add('show')},closeS=()=>{S.hub=false;$('sheet').classList.remove('show')},fm=m=>{if($('fm'))$('fm').textContent=m},amsg=m=>{if($('msg'))$('msg').textContent=m};
-try{const x=JSON.parse(localStorage.getItem('mf_btc'));if(x&&x.p>0)S.btc=x}catch(e){}
+let S={space:'personal',user:null,acc:[],accAll:[],mid:null,cat:[],tx:[],debts:[],pays:[],hub:'',ha:'btc',hold:[],holdErr:'',pxE:{btc:'',gold:''},px:{btc:{p:0,t:0,src:''},gold:{p:0,t:0,src:''}},msg:'',off:0,real:false,busy:false,req:null,pid:null,eid:null};
+const openS=h=>{S.hub='';$('sf').innerHTML=h;$('sheet').classList.add('show')},closeS=()=>{S.hub='';$('sheet').classList.remove('show')},fm=m=>{if($('fm'))$('fm').textContent=m},amsg=m=>{if($('msg'))$('msg').textContent=m};
+try{const x=JSON.parse(localStorage.getItem('mf_px'));if(x){for(const k of ['btc','gold'])if(x[k]&&x[k].p>0)S.px[k]=x[k]}else{const y=JSON.parse(localStorage.getItem('mf_btc'));if(y&&y.p>0)S.px.btc=y}}catch(e){}
 const CK='mf_cache_v1';
 const saveCache=()=>{try{localStorage.setItem(CK,JSON.stringify({uid:S.user.id,t:Date.now(),accAll:S.accAll,cat:S.cat,tx:S.tx,debts:S.debts,pays:S.pays,hold:S.hold}))}catch(e){}};
 const readCache=()=>{try{const c=JSON.parse(localStorage.getItem(CK));return c&&c.uid?c:null}catch(e){return null}};
@@ -68,31 +68,38 @@ async function load(){
  const e=a.error||c.error||t.error||d.error||p.error,net=e&&(!navigator.onLine||/fetch|network|load failed/i.test(e.message||''));
  if(net){const ch=readCache();if(ch&&ch.uid===S.user.id){useCache(ch);S.msg='';return render()}}
  S.off=0;S.msg=e?'Gagal memuat data: '+e.message:'';
- S.accAll=a.data||[];S.acc=S.accAll.filter(x=>x.is_active);S.cat=c.data||[];S.tx=t.data||[];S.debts=d.data||[];S.pays=p.data||[];S.hold=h.error?[]:(h.data||[]);S.holdErr=h.error?h.error.message:'';if(!e&&S.real)saveCache();render();if(Date.now()-S.btc.t>30000)fetchBtc()}
+ S.accAll=a.data||[];S.acc=S.accAll.filter(x=>x.is_active);S.cat=c.data||[];S.tx=t.data||[];S.debts=d.data||[];S.pays=p.data||[];S.hold=h.error?[]:(h.data||[]);S.holdErr=h.error?h.error.message:'';if(!e&&S.real)saveCache();render();if(Date.now()-Math.min(S.px.btc.t,S.px.gold.t)>30000)fetchPx()}
 
-const SAT=1e8,toSats=q=>Math.round(Number(q)*SAT),mulp=(s,p)=>Number((BigInt(s)*BigInt(Math.round(p))+50000000n)/100000000n);
-const fmtBtc=s=>(s/SAT).toLocaleString('id-ID',{maximumFractionDigits:8});
-function pos(H){let s=0,c=0,r=0;[...H].sort((x,y)=>new Date(x.occurred_at)-new Date(y.occurred_at)||new Date(x.created_at)-new Date(y.created_at)).forEach(x=>{const q=toSats(x.quantity),v=mulp(q,x.price_idr),f=Number(x.fee_idr)||0;
+const AS={btc:{n:'Bitcoin',u:'BTC',sc:1e8,dp:8},gold:{n:'Emas Antam',u:'gram',sc:1e4,dp:4}};
+const toSc=(q,a)=>Math.round(Number(q)*AS[a].sc),mulp=(s,p,a)=>Number((BigInt(s)*BigInt(Math.round(p))+BigInt(AS[a].sc/2))/BigInt(AS[a].sc));
+const fmtQ=(s,a)=>(s/AS[a].sc).toLocaleString('id-ID',{maximumFractionDigits:AS[a].dp});
+function pos(H,a){let s=0,c=0,r=0;H.filter(x=>x.asset===a).sort((x,y)=>new Date(x.occurred_at)-new Date(y.occurred_at)||new Date(x.created_at)-new Date(y.created_at)).forEach(x=>{const q=toSc(x.quantity,a),v=mulp(q,x.price_idr,a),f=Number(x.fee_idr)||0;
  if(x.side==='buy'){c+=v+f;s+=q}else{const part=s>0?Math.round(c*Math.min(q,s)/s):0;r+=v-f-part;c-=part;s=Math.max(0,s-q)}});return{s,c,r}}
-function btcBox(){const H=S.hold.filter(x=>x.space===S.space),P=pos(H),pr=S.btc.p,val=pr?mulp(P.s,pr):0,un=val-P.c,sg=n=>(n>0?'+':'')+rp(n),old=pr&&Date.now()-S.btc.t>9e5;
- return `<div class="row"><b>Kepemilikan</b><b>${fmtBtc(P.s)} BTC</b></div>
-<div class="row"><div><span>Harga 1 BTC</span><div class="sub">${pr?'Diperbarui '+new Date(S.btc.t).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})+' · '+esc(S.btc.src)+(old?' · data lama':''):'Belum dimuat'}${S.btcErr?' · '+esc(S.btcErr):''}</div></div><b>${pr?rp(pr):'-'}</b></div>
+function box(a){const H=S.hold.filter(x=>x.space==='personal'),P=pos(H,a),X=S.px[a],pr=X.p,val=pr?mulp(P.s,pr,a):0,un=val-P.c,sg=n=>(n>0?'+':'')+rp(n),old=pr&&Date.now()-X.t>9e5,u=AS[a].u;
+ return `<div class="row"><b>Kepemilikan</b><b>${fmtQ(P.s,a)} ${u}</b></div>
+<div class="row"><div><span>Harga 1 ${u}</span><div class="sub">${pr?'Diperbarui '+new Date(X.t).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})+' · '+esc(X.src)+(old?' · data lama':''):'Belum dimuat'}${S.pxE[a]?' · '+esc(S.pxE[a]):''}</div></div><b>${pr?rp(pr):'-'}</b></div>
 <div class="row"><span>Nilai sekarang</span><b>${pr?rp(val):'-'}</b></div>
 <div class="row"><span>Modal tersisa</span><b>${rp(P.c)}</b></div>
 <div class="row"><span>Untung/rugi (belum dijual)</span><b class="${un>=0?'in':'out'}">${pr?sg(un):'-'}</b></div>
 <div class="row"><span>Untung/rugi (sudah dijual)</span><b class="${P.r>=0?'in':'out'}">${sg(P.r)}</b></div>
-<div style="display:flex;gap:8px;margin-top:6px"><button class="btn g" data-a="btcref" style="margin:0">Segarkan harga</button><button class="btn g" data-a="btcman" style="margin:0">Isi harga manual</button></div>`}
-function hubHtml(){const H=S.hold.filter(x=>x.space==='personal');
- return `<h2>Bitcoin</h2><div class="card" id="btcbox">${btcBox()}</div>${S.holdErr?`<div class="msg">Tabel tabungan belum siap di Supabase: ${esc(S.holdErr)}</div>`:''}<button class="btn" data-a="btcadd">+ Catat beli/jual Bitcoin</button>${H.length?`<div class="card">${opts(H.slice(0,10),x=>`<div class="row"><div><b>${x.side==='buy'?'Beli':'Jual'} ${fmtBtc(toSats(x.quantity))} BTC</b><div class="sub">${new Date(x.occurred_at).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})} · @ ${rp(Number(x.price_idr))}${Number(x.fee_idr)?' · biaya '+rp(Number(x.fee_idr)):''}</div></div><button class="del" data-hdel="${x.id}">Hapus</button></div>`)}</div>`:''}<button class="btn g" data-a="close">Tutup</button>`}
-function openHub(){openS(hubHtml());S.hub=true}
-const updPrice=()=>{if(S.user){const y=scrollY;render();scrollTo(0,y);if(S.hub)$('sf').innerHTML=hubHtml()}};
+${a==='gold'?'<div class="sub" style="margin:6px 0">Harga emas adalah perkiraan dari harga emas dunia, bukan harga Antam. Harga jual/buyback Antam di toko bisa berbeda beberapa persen.</div>':''}
+<div style="display:flex;gap:8px;margin-top:6px"><button class="btn g" data-a="pxref" style="margin:0">Segarkan harga</button><button class="btn g" data-a="pxman" data-as="${a}" style="margin:0">Isi harga manual</button></div>`}
+function hubHtml(a){const H=S.hold.filter(x=>x.space==='personal'&&x.asset===a),u=AS[a].u;
+ return `<h2>${AS[a].n}</h2><div class="card">${box(a)}</div>${S.holdErr?`<div class="msg">Tabel tabungan belum siap di Supabase: ${esc(S.holdErr)}</div>`:''}<button class="btn" data-a="hadd">+ Catat beli/jual ${AS[a].n}</button>${H.length?`<div class="card">${opts(H.slice(0,10),x=>`<div class="row"><div><b>${x.side==='buy'?'Beli':'Jual'} ${fmtQ(toSc(x.quantity,a),a)} ${u}</b><div class="sub">${new Date(x.occurred_at).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})} · @ ${rp(Number(x.price_idr))}${Number(x.fee_idr)?' · biaya '+rp(Number(x.fee_idr)):''}</div></div><button class="del" data-hdel="${x.id}">Hapus</button></div>`)}</div>`:''}<button class="btn g" data-a="close">Tutup</button>`}
+function openHub(a){S.ha=a;openS(hubHtml(a));S.hub=a}
+const updPrice=()=>{if(S.user){const y=scrollY;render();scrollTo(0,y)}};
 const tf=u=>{const c=new AbortController();setTimeout(()=>c.abort(),8000);return fetch(u,{signal:c.signal})};
-async function fetchBtc(){if(!navigator.onLine){S.btcErr='offline';return updPrice()}
- let p=0,src='';
- try{const j=await(await tf('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=idr')).json();p=Math.round(j.bitcoin.idr);src='CoinGecko'}catch(e){}
- if(!(p>0)){try{const j=await(await tf('https://indodax.com/api/ticker/btcidr')).json();p=Math.round(Number(j.ticker.last));src='Indodax'}catch(e){}}
- if(p>0){S.btc={p,t:Date.now(),src};S.btcErr='';try{localStorage.setItem('mf_btc',JSON.stringify(S.btc))}catch(e){}}else S.btcErr='gagal memuat harga';
- updPrice()}
+const savePx=()=>{try{localStorage.setItem('mf_px',JSON.stringify(S.px))}catch(e){}};
+async function fetchPx(){if(!navigator.onLine){S.pxE.btc=S.pxE.gold='offline';return updPrice()}
+ let b=0,g=0;
+ try{const j=await(await tf('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,pax-gold,tether-gold&vs_currencies=idr')).json();
+  b=Math.round((j.bitcoin||{}).idr||0);const o=((j['pax-gold']||{}).idr||(j['tether-gold']||{}).idr||0);g=Math.round(o/31.1034768)}catch(e){}
+ if(!(b>0)){try{const j=await(await tf('https://indodax.com/api/ticker/btcidr')).json();const p=Math.round(Number(j.ticker.last));if(p>0){b=p;S.px.btc={p,t:Date.now(),src:'Indodax'};S.pxE.btc=''}}catch(e){}}
+ else{S.px.btc={p:b,t:Date.now(),src:'CoinGecko'};S.pxE.btc=''}
+ if(g>0){S.px.gold={p:g,t:Date.now(),src:'estimasi emas dunia'};S.pxE.gold=''}
+ if(!(S.px.btc.t>Date.now()-5000))S.pxE.btc='gagal memuat harga';
+ if(!(g>0))S.pxE.gold='gagal memuat harga';
+ savePx();updPrice()}
 function debtCard(d){const pd=paidOf(d),r=d.amount-pd,pay=d.kind==='payable',st=r<=0?'Lunas':pd>0?'Sebagian lunas':'Belum lunas',
  dd=r>0&&d.due_date?Math.ceil((new Date(d.due_date+'T00:00')-new Date().setHours(0,0,0,0))/864e5):null;
  return `<div class="card"><div class="row"><div><b>${esc(d.party)}</b><div class="sub">${pay?'Utang saya':'Piutang'}${d.due_date?' · jatuh tempo '+esc(d.due_date):''}</div></div><b class="${pay?'out':'in'}">${rp(r)}</b></div><div class="sub">${st} · dibayar ${rp(pd)} dari ${rp(d.amount)}</div>${dd!==null?`<div class="sub ${dd<=3?'out':''}">${dd<0?'Lewat '+(-dd)+' hari':dd===0?'Jatuh tempo hari ini':dd+' hari lagi'}</div>`:''}${d.note?`<div class="sub">${esc(d.note)}</div>`:''}${S.pays.filter(p=>p.debt_id===d.id).map(p=>`<div class="row"><span class="sub">${new Date(p.paid_at).toLocaleDateString('id-ID',{day:'numeric',month:'short'})} · ${rp(p.amount)}</span><button class="del" data-unpay="${p.transaction_id}">Batalkan</button></div>`).join('')}${r>0?`<button class="btn g" data-pay="${d.id}" style="margin-top:8px">${pay?'Catat pembayaran':'Catat penerimaan'}</button>`:''}${pd===0?`<button class="del" data-deldebt="${d.id}">Hapus</button>`:''}</div>`}
@@ -107,10 +114,12 @@ function render(){
  rem=k=>D.filter(d=>d.kind===k).reduce((s,d)=>s+d.amount-paidOf(d),0),
  an=id=>esc((S.accAll.find(a=>a.id===id)||{}).name||'-'),
  cn=x=>esc((S.cat.find(c=>c.id===x.category_id)||{}).name||KL[x.kind]),
- isP=S.space==='personal',P=pos(H),pr=S.btc.p,btcV=isP?(pr?mulp(P.s,pr):P.c):0,btcInc=isP&&H.length>0,total=cash+btcV,
- btcRow=isP?`<div class="row"><div><b>Bitcoin</b><div class="sub">Tabungan · ${fmtBtc(P.s)} BTC${H.length&&!pr?' · harga belum dimuat, nilai = modal':''}</div></div><div style="text-align:right"><b>${rp(btcV)}</b><div><button class="del" data-a="btcopen" style="color:var(--acc)">Kelola</button></div></div></div>`:'';
+ isP=S.space==='personal',AV=a=>{const P=pos(H,a),pr=S.px[a].p;return isP?(pr?mulp(P.s,pr,a):P.c):0},bV=AV('btc'),gV=AV('gold'),total=cash+bV+gV,
+ inc=['btc','gold'].filter(a=>isP&&H.some(x=>x.asset===a)).map(a=>AS[a].n+' '+rp(a==='btc'?bV:gV)).join(' · '),
+ rowA=a=>{const P=pos(H,a),pr=S.px[a].p;return `<div class="row"><div><b>${AS[a].n}</b><div class="sub">Tabungan · ${fmtQ(P.s,a)} ${AS[a].u}${H.some(x=>x.asset===a)&&!pr?' · harga belum dimuat, nilai = modal':''}</div></div><div style="text-align:right"><b>${rp(AV(a))}</b><div><button class="del" data-a="hubopen" data-as="${a}" style="color:var(--acc)">Kelola</button></div></div></div>`},
+ btcRow=isP?rowA('btc')+rowA('gold'):'';
  $('app').innerHTML=`${S.off?`<div class="card" style="background:var(--line)"><b>Mode offline</b><div class="sub">Menampilkan data terakhir yang tersimpan (${new Date(S.off).toLocaleString('id-ID')}). Menyimpan, mengubah, transfer, dan backup butuh internet.</div></div>`:''}<div class="seg">${Object.keys(SP).map(k=>`<button data-sp="${k}" class="${S.space===k?'on':''}">${SP[k]}</button>`).join('')}</div>
-<div class="hero"><span>Total saldo</span><div class="big">${rp(total)}</div>${btcInc?`<div style="font-size:13px;opacity:.85">Termasuk Bitcoin ${rp(btcV)}</div>`:''}<span>Arus kas bersih bulan ini: ${rp(i-o)}</span></div>
+<div class="hero"><span>Total saldo</span><div class="big">${rp(total)}</div>${inc?`<div style="font-size:13px;opacity:.85">Termasuk ${inc}</div>`:''}<span>Arus kas bersih bulan ini: ${rp(i-o)}</span></div>
 <div class="grid"><div class="card"><span class="sub">Pemasukan</span><div class="in"><b>${rp(i)}</b></div></div><div class="card"><span class="sub">Pengeluaran</span><div class="out"><b>${rp(o)}</b></div></div></div>
 <button class="btn" data-a="addtx">+ Tambah transaksi</button><button class="btn g" data-a="xfer">Transfer</button><a class="btn g" href="./laporan.html">Grafik &amp; laporan</a>
 <h2>Akun</h2><div class="card">${(opts(A,a=>`<div class="row"><div><b>${esc(a.name)}</b><div class="sub">${esc(a.type)}</div></div><div style="text-align:right"><b>${rp(Number(a.balance))}</b><div><button class="del" data-mng="${a.id}" style="color:var(--acc)">Kelola</button></div></div></div>`)+btcRow)||'<p class="sub">Belum ada akun. Tekan Tambah akun.</p>'}</div>
@@ -118,7 +127,7 @@ function render(){
 <h2>Utang dan piutang</h2><div class="grid"><div class="card"><span class="sub">Utang saya</span><div class="out"><b>${rp(rem('payable'))}</b></div></div><div class="card"><span class="sub">Piutang</span><div class="in"><b>${rp(rem('receivable'))}</b></div></div></div>
 ${opts(D,debtCard)}<button class="btn g" data-a="adddebt">Tambah utang/piutang</button>
 <h2>Transaksi terbaru</h2><div class="card">${opts(T.slice(0,20),x=>`<div class="row"><div><b>${cn(x)}</b><div class="sub">${new Date(x.occurred_at).toLocaleDateString('id-ID',{day:'numeric',month:'short'})} · ${an(x.account_id)}${x.note?' · '+esc(x.note):''}</div></div><div style="text-align:right"><b class="${x.kind==='in'?'in':x.kind==='out'?'out':''}">${PLUS.includes(x.kind)?'+':'-'}${rp(x.amount)}</b><div>${x.kind==='in'||x.kind==='out'?`<button class="del" data-edit="${x.id}" style="color:var(--acc);margin-right:10px">Ubah</button>`:''}<button class="del" data-del="${x.id}">Hapus</button></div></div></div>`)||'<p class="sub">Belum ada transaksi.</p>'}</div>
-<button class="btn g" data-a="bk">Unduh backup (JSON)</button><a class="btn g" href="./pulihkan.html">Pulihkan dari backup</a><button class="btn g" data-a="out">Keluar</button><div class="msg">${esc(S.msg)}</div>`;if(S.hub)$('sf').innerHTML=hubHtml()}
+<button class="btn g" data-a="bk">Unduh backup (JSON)</button><a class="btn g" href="./pulihkan.html">Pulihkan dari backup</a><button class="btn g" data-a="out">Keluar</button><div class="msg">${esc(S.msg)}</div>`;if(S.hub)$('sf').innerHTML=hubHtml(S.hub)}
 
 async function auth(m){const email=$('em').value.trim(),password=$('pw').value;
  if(!email||password.length<8)return amsg('Isi email dan kata sandi (minimal 8 karakter).');
@@ -184,17 +193,17 @@ async function mngDel(){if(S.busy)return;const a=S.acc.find(x=>x.id===S.mid);
  if(!confirm('Hapus permanen akun '+a.name+'? Tidak bisa dibatalkan.'))return;
  S.busy=true;const r=await sb.from('accounts').delete().eq('id',S.mid);S.busy=false;
  if(r.error)return fm('Tidak bisa dihapus karena akun ini sudah punya riwayat. Gunakan Nonaktifkan. ('+r.error.message+')');closeS();await load()}
-function openBtc(){S.req=crypto.randomUUID();
- openS(`<h2>Catat Bitcoin</h2><select id="bs"><option value="buy">Beli</option><option value="sell">Jual</option></select><input id="bq" inputmode="decimal" placeholder="Jumlah BTC, mis. 0,005" autocomplete="off"><input id="bp" inputmode="numeric" placeholder="Harga per 1 BTC (Rp)" value="${S.btc.p||''}" autocomplete="off"><input id="bf" inputmode="numeric" placeholder="Biaya/fee (Rp, opsional)" autocomplete="off"><div class="sub">Tanggal</div><input id="bd" type="date" value="${new Date().toLocaleDateString('sv-SE')}"><input id="bn" placeholder="Catatan (opsional)"><div class="msg" id="fm"></div><button class="btn" id="sv" data-a="btcsave">Simpan</button><button class="btn g" data-a="close">Batal</button>`)}
-async function saveBtc(){if(S.busy)return;if(S.space!=='personal')return fm('Bitcoin hanya untuk ruang Personal.');const q=parseFloat(String($('bq').value).replace(',','.')),sats=Math.round(q*SAT),price=num($('bp').value),side=$('bs').value;
- if(!(sats>=1))return fm('Isi jumlah BTC lebih dari nol (maksimal 8 angka di belakang koma).');if(!price)return fm('Isi harga per 1 BTC.');
- if(side==='sell'&&sats>pos(S.hold.filter(x=>x.space===S.space)).s)return fm('Jumlah jual melebihi kepemilikan.');
+function openH(){const a=S.ha,m=AS[a];S.req=crypto.randomUUID();
+ openS(`<h2>Catat ${m.n}</h2><select id="bs"><option value="buy">Beli</option><option value="sell">Jual</option></select><input id="bq" inputmode="decimal" placeholder="Jumlah ${m.u}, mis. ${a==='btc'?'0,005':'2,5'}" autocomplete="off"><input id="bp" inputmode="numeric" placeholder="Harga per 1 ${m.u} (Rp)" value="${S.px[a].p||''}" autocomplete="off"><input id="bf" inputmode="numeric" placeholder="Biaya/fee (Rp, opsional)" autocomplete="off"><div class="sub">Tanggal</div><input id="bd" type="date" value="${new Date().toLocaleDateString('sv-SE')}"><input id="bn" placeholder="Catatan (opsional)"><div class="msg" id="fm"></div><button class="btn" id="sv" data-a="hsave">Simpan</button><button class="btn g" data-a="close">Batal</button>`)}
+async function saveH(){if(S.busy)return;const a=S.ha,m=AS[a];if(S.space!=='personal')return fm('Tabungan hanya untuk ruang Personal.');const q=parseFloat(String($('bq').value).replace(',','.')),sc=Math.round(q*m.sc),price=num($('bp').value),side=$('bs').value;
+ if(!(sc>=1))return fm('Isi jumlah '+m.u+' lebih dari nol (maksimal '+m.dp+' angka di belakang koma).');if(!price)return fm('Isi harga per 1 '+m.u+'.');
+ if(side==='sell'&&sc>pos(S.hold.filter(x=>x.space===S.space),a).s)return fm('Jumlah jual melebihi kepemilikan.');
  const ds=$('bd').value||new Date().toLocaleDateString('sv-SE'),at=ds===new Date().toLocaleDateString('sv-SE')?new Date().toISOString():new Date(ds+'T12:00:00').toISOString();
  S.busy=true;$('sv').disabled=true;
- const r=await sb.from('holdings_entries').insert({space:S.space,asset:'btc',side,quantity:(sats/SAT).toFixed(8),price_idr:price,fee_idr:num($('bf').value),occurred_at:at,note:$('bn').value.trim()||null,request_id:S.req});
+ const r=await sb.from('holdings_entries').insert({space:S.space,asset:a,side,quantity:(sc/m.sc).toFixed(8),price_idr:price,fee_idr:num($('bf').value),occurred_at:at,note:$('bn').value.trim()||null,request_id:S.req});
  S.busy=false;if($('sv'))$('sv').disabled=false;
- if(r.error&&r.error.code!=='23505')return fm('Gagal menyimpan: '+r.error.message);closeS();await load();openHub()}
-async function delHold(id){if(!confirm('Hapus catatan Bitcoin ini?'))return;const r=await sb.from('holdings_entries').delete().eq('id',id);if(r.error)S.msg='Gagal menghapus: '+r.error.message;await load()}
+ if(r.error&&r.error.code!=='23505')return fm('Gagal menyimpan: '+r.error.message);closeS();await load();openHub(a)}
+async function delHold(id){if(!confirm('Hapus catatan ini?'))return;const r=await sb.from('holdings_entries').delete().eq('id',id);if(r.error)S.msg='Gagal menghapus: '+r.error.message;await load()}
 async function delDebt(id){if(!confirm('Hapus catatan ini?'))return;const r=await sb.from('debts').delete().eq('id',id);if(r.error)S.msg='Gagal menghapus: '+r.error.message;await load()}
 
 async function delTx(id){const x=S.tx.find(t=>t.id===id);if(!x)return;
@@ -208,11 +217,11 @@ async function backup(){const o={app:'My Finance',version:1,exported_at:new Date
  a.download='my-finance-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove()}
 
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const a=b.dataset.a,d=b.dataset;
- if(S.off&&(d.hdel||['btcadd','btcsave'].includes(a)||d.mng||d.edit||d.del||d.pay||d.unpay||d.deldebt||['addtx','xfer','addacc','adddebt','bk'].includes(a))){S.msg='Sedang offline. Hubungkan internet dulu untuk menyimpan atau mengubah data.';return render()}
+ if(S.off&&(d.hdel||['hadd','hsave'].includes(a)||d.mng||d.edit||d.del||d.pay||d.unpay||d.deldebt||['addtx','xfer','addacc','adddebt','bk'].includes(a))){S.msg='Sedang offline. Hubungkan internet dulu untuk menyimpan atau mengubah data.';return render()}
  if(d.sp){S.space=d.sp;render()}
  else if(d.hdel)delHold(d.hdel)
- else if(a==='btcopen')openHub();else if(a==='btcadd')openBtc();else if(a==='btcsave')saveBtc();else if(a==='btcref')fetchBtc();
- else if(a==='btcman'){const v=num(prompt('Masukkan harga 1 BTC dalam Rupiah')||'');if(v>0){S.btc={p:v,t:Date.now(),src:'manual'};S.btcErr='';try{localStorage.setItem('mf_btc',JSON.stringify(S.btc))}catch(x){}updPrice()}}
+ else if(a==='hubopen')openHub(d.as);else if(a==='hadd')openH();else if(a==='hsave')saveH();else if(a==='pxref')fetchPx();
+ else if(a==='pxman'){const k=d.as,v=num(prompt('Masukkan harga 1 '+AS[k].u+' dalam Rupiah')||'');if(v>0){S.px[k]={p:v,t:Date.now(),src:'manual'};S.pxE[k]='';savePx();updPrice()}}
  else if(d.mng)openMng(d.mng)
  else if(d.edit)openTx(d.edit)
  else if(d.del)delTx(d.del)
@@ -232,7 +241,7 @@ else sb.auth.onAuthStateChange((ev,ses)=>{
  if(!ses&&!navigator.onLine){const ch=readCache();if(ch){S.user={id:ch.uid};S.real=false;useCache(ch);return render()}}
  if(!ses){try{localStorage.removeItem(CK)}catch(x){}}
  S.user=ses?.user||null;S.real=!!ses;if(!S.user){S.acc=[];S.accAll=[];S.cat=[];S.tx=[];S.debts=[];S.pays=[];S.msg=''}setTimeout(()=>S.user?start():render(),0)});
-setInterval(()=>{if(S.user&&!document.hidden)fetchBtc()},60000);
-addEventListener('online',()=>{fetchBtc();if(S.user){S.real?load():location.reload()}});
+setInterval(()=>{if(S.user&&!document.hidden)fetchPx()},60000);
+addEventListener('online',()=>{fetchPx();if(S.user){S.real?load():location.reload()}});
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 </script></body></html>
