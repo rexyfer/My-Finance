@@ -46,8 +46,8 @@ const num=v=>parseInt(String(v).replace(/\D/g,''),10)||0;
 const SP={personal:'Personal',business:'Business'};
 const KL={in:'Pemasukan',out:'Pengeluaran',transfer_in:'Transfer masuk',transfer_out:'Transfer keluar',debt_in:'Penerimaan piutang',debt_out:'Pembayaran utang'};
 const PLUS=['in','transfer_in','debt_in'];
-let S={space:'personal',user:null,acc:[],accAll:[],mid:null,cat:[],tx:[],debts:[],pays:[],hold:[],holdErr:'',btcErr:'',btc:{p:0,t:0,src:''},msg:'',off:0,real:false,busy:false,req:null,pid:null,eid:null};
-const openS=h=>{$('sf').innerHTML=h;$('sheet').classList.add('show')},closeS=()=>$('sheet').classList.remove('show'),fm=m=>{if($('fm'))$('fm').textContent=m},amsg=m=>{if($('msg'))$('msg').textContent=m};
+let S={space:'personal',user:null,acc:[],accAll:[],mid:null,cat:[],tx:[],debts:[],pays:[],hub:false,hold:[],holdErr:'',btcErr:'',btc:{p:0,t:0,src:''},msg:'',off:0,real:false,busy:false,req:null,pid:null,eid:null};
+const openS=h=>{S.hub=false;$('sf').innerHTML=h;$('sheet').classList.add('show')},closeS=()=>{S.hub=false;$('sheet').classList.remove('show')},fm=m=>{if($('fm'))$('fm').textContent=m},amsg=m=>{if($('msg'))$('msg').textContent=m};
 try{const x=JSON.parse(localStorage.getItem('mf_btc'));if(x&&x.p>0)S.btc=x}catch(e){}
 const CK='mf_cache_v1';
 const saveCache=()=>{try{localStorage.setItem(CK,JSON.stringify({uid:S.user.id,t:Date.now(),accAll:S.accAll,cat:S.cat,tx:S.tx,debts:S.debts,pays:S.pays,hold:S.hold}))}catch(e){}};
@@ -82,7 +82,10 @@ function btcBox(){const H=S.hold.filter(x=>x.space===S.space),P=pos(H),pr=S.btc.
 <div class="row"><span>Untung/rugi (belum dijual)</span><b class="${un>=0?'in':'out'}">${pr?sg(un):'-'}</b></div>
 <div class="row"><span>Untung/rugi (sudah dijual)</span><b class="${P.r>=0?'in':'out'}">${sg(P.r)}</b></div>
 <div style="display:flex;gap:8px;margin-top:6px"><button class="btn g" data-a="btcref" style="margin:0">Segarkan harga</button><button class="btn g" data-a="btcman" style="margin:0">Isi harga manual</button></div>`}
-const updPrice=()=>{if(S.user){const y=scrollY;render();scrollTo(0,y)}};
+function hubHtml(){const H=S.hold.filter(x=>x.space==='personal');
+ return `<h2>Bitcoin</h2><div class="card" id="btcbox">${btcBox()}</div>${S.holdErr?`<div class="msg">Tabel tabungan belum siap di Supabase: ${esc(S.holdErr)}</div>`:''}<button class="btn" data-a="btcadd">+ Catat beli/jual Bitcoin</button>${H.length?`<div class="card">${opts(H.slice(0,10),x=>`<div class="row"><div><b>${x.side==='buy'?'Beli':'Jual'} ${fmtBtc(toSats(x.quantity))} BTC</b><div class="sub">${new Date(x.occurred_at).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})} · @ ${rp(Number(x.price_idr))}${Number(x.fee_idr)?' · biaya '+rp(Number(x.fee_idr)):''}</div></div><button class="del" data-hdel="${x.id}">Hapus</button></div>`)}</div>`:''}<button class="btn g" data-a="close">Tutup</button>`}
+function openHub(){openS(hubHtml());S.hub=true}
+const updPrice=()=>{if(S.user){const y=scrollY;render();scrollTo(0,y);if(S.hub)$('sf').innerHTML=hubHtml()}};
 const tf=u=>{const c=new AbortController();setTimeout(()=>c.abort(),8000);return fetch(u,{signal:c.signal})};
 async function fetchBtc(){if(!navigator.onLine){S.btcErr='offline';return updPrice()}
  let p=0,src='';
@@ -104,20 +107,18 @@ function render(){
  rem=k=>D.filter(d=>d.kind===k).reduce((s,d)=>s+d.amount-paidOf(d),0),
  an=id=>esc((S.accAll.find(a=>a.id===id)||{}).name||'-'),
  cn=x=>esc((S.cat.find(c=>c.id===x.category_id)||{}).name||KL[x.kind]),
- isP=S.space==='personal',P=pos(H),pr=S.btc.p,btcV=isP?(pr?mulp(P.s,pr):P.c):0,btcHas=isP&&H.length>0,total=cash+btcV,
- btcRow=btcHas?`<div class="row"><div><b>Bitcoin</b><div class="sub">Tabungan · ${fmtBtc(P.s)} BTC${pr?'':' · harga belum dimuat, nilai = modal'}</div></div><b>${rp(btcV)}</b></div>`:'';
+ isP=S.space==='personal',P=pos(H),pr=S.btc.p,btcV=isP?(pr?mulp(P.s,pr):P.c):0,btcInc=isP&&H.length>0,total=cash+btcV,
+ btcRow=isP?`<div class="row"><div><b>Bitcoin</b><div class="sub">Tabungan · ${fmtBtc(P.s)} BTC${H.length&&!pr?' · harga belum dimuat, nilai = modal':''}</div></div><div style="text-align:right"><b>${rp(btcV)}</b><div><button class="del" data-a="btcopen" style="color:var(--acc)">Kelola</button></div></div></div>`:'';
  $('app').innerHTML=`${S.off?`<div class="card" style="background:var(--line)"><b>Mode offline</b><div class="sub">Menampilkan data terakhir yang tersimpan (${new Date(S.off).toLocaleString('id-ID')}). Menyimpan, mengubah, transfer, dan backup butuh internet.</div></div>`:''}<div class="seg">${Object.keys(SP).map(k=>`<button data-sp="${k}" class="${S.space===k?'on':''}">${SP[k]}</button>`).join('')}</div>
-<div class="hero"><span>Total saldo</span><div class="big">${rp(total)}</div>${btcHas?`<div style="font-size:13px;opacity:.85">Termasuk Bitcoin ${rp(btcV)}</div>`:''}<span>Arus kas bersih bulan ini: ${rp(i-o)}</span></div>
+<div class="hero"><span>Total saldo</span><div class="big">${rp(total)}</div>${btcInc?`<div style="font-size:13px;opacity:.85">Termasuk Bitcoin ${rp(btcV)}</div>`:''}<span>Arus kas bersih bulan ini: ${rp(i-o)}</span></div>
 <div class="grid"><div class="card"><span class="sub">Pemasukan</span><div class="in"><b>${rp(i)}</b></div></div><div class="card"><span class="sub">Pengeluaran</span><div class="out"><b>${rp(o)}</b></div></div></div>
 <button class="btn" data-a="addtx">+ Tambah transaksi</button><button class="btn g" data-a="xfer">Transfer</button><a class="btn g" href="./laporan.html">Grafik &amp; laporan</a>
 <h2>Akun</h2><div class="card">${(opts(A,a=>`<div class="row"><div><b>${esc(a.name)}</b><div class="sub">${esc(a.type)}</div></div><div style="text-align:right"><b>${rp(Number(a.balance))}</b><div><button class="del" data-mng="${a.id}" style="color:var(--acc)">Kelola</button></div></div></div>`)+btcRow)||'<p class="sub">Belum ada akun. Tekan Tambah akun.</p>'}</div>
 <button class="btn g" data-a="addacc">Tambah akun</button>
 <h2>Utang dan piutang</h2><div class="grid"><div class="card"><span class="sub">Utang saya</span><div class="out"><b>${rp(rem('payable'))}</b></div></div><div class="card"><span class="sub">Piutang</span><div class="in"><b>${rp(rem('receivable'))}</b></div></div></div>
 ${opts(D,debtCard)}<button class="btn g" data-a="adddebt">Tambah utang/piutang</button>
-${isP?`<h2>Tabungan Bitcoin</h2><div class="card" id="btcbox">${btcBox()}</div>${S.holdErr?`<div class="msg">Tabel tabungan belum siap di Supabase: ${esc(S.holdErr)}</div>`:''}<button class="btn g" data-a="btcadd">+ Catat beli/jual Bitcoin</button>
-${H.length?`<div class="card">${opts(H.slice(0,10),x=>`<div class="row"><div><b>${x.side==='buy'?'Beli':'Jual'} ${fmtBtc(toSats(x.quantity))} BTC</b><div class="sub">${new Date(x.occurred_at).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})} · @ ${rp(Number(x.price_idr))}${Number(x.fee_idr)?' · biaya '+rp(Number(x.fee_idr)):''}</div></div><button class="del" data-hdel="${x.id}">Hapus</button></div>`)}</div>`:''}`:''}
 <h2>Transaksi terbaru</h2><div class="card">${opts(T.slice(0,20),x=>`<div class="row"><div><b>${cn(x)}</b><div class="sub">${new Date(x.occurred_at).toLocaleDateString('id-ID',{day:'numeric',month:'short'})} · ${an(x.account_id)}${x.note?' · '+esc(x.note):''}</div></div><div style="text-align:right"><b class="${x.kind==='in'?'in':x.kind==='out'?'out':''}">${PLUS.includes(x.kind)?'+':'-'}${rp(x.amount)}</b><div>${x.kind==='in'||x.kind==='out'?`<button class="del" data-edit="${x.id}" style="color:var(--acc);margin-right:10px">Ubah</button>`:''}<button class="del" data-del="${x.id}">Hapus</button></div></div></div>`)||'<p class="sub">Belum ada transaksi.</p>'}</div>
-<button class="btn g" data-a="bk">Unduh backup (JSON)</button><a class="btn g" href="./pulihkan.html">Pulihkan dari backup</a><button class="btn g" data-a="out">Keluar</button><div class="msg">${esc(S.msg)}</div>`}
+<button class="btn g" data-a="bk">Unduh backup (JSON)</button><a class="btn g" href="./pulihkan.html">Pulihkan dari backup</a><button class="btn g" data-a="out">Keluar</button><div class="msg">${esc(S.msg)}</div>`;if(S.hub)$('sf').innerHTML=hubHtml()}
 
 async function auth(m){const email=$('em').value.trim(),password=$('pw').value;
  if(!email||password.length<8)return amsg('Isi email dan kata sandi (minimal 8 karakter).');
@@ -192,7 +193,7 @@ async function saveBtc(){if(S.busy)return;if(S.space!=='personal')return fm('Bit
  S.busy=true;$('sv').disabled=true;
  const r=await sb.from('holdings_entries').insert({space:S.space,asset:'btc',side,quantity:(sats/SAT).toFixed(8),price_idr:price,fee_idr:num($('bf').value),occurred_at:at,note:$('bn').value.trim()||null,request_id:S.req});
  S.busy=false;if($('sv'))$('sv').disabled=false;
- if(r.error&&r.error.code!=='23505')return fm('Gagal menyimpan: '+r.error.message);closeS();await load()}
+ if(r.error&&r.error.code!=='23505')return fm('Gagal menyimpan: '+r.error.message);closeS();await load();openHub()}
 async function delHold(id){if(!confirm('Hapus catatan Bitcoin ini?'))return;const r=await sb.from('holdings_entries').delete().eq('id',id);if(r.error)S.msg='Gagal menghapus: '+r.error.message;await load()}
 async function delDebt(id){if(!confirm('Hapus catatan ini?'))return;const r=await sb.from('debts').delete().eq('id',id);if(r.error)S.msg='Gagal menghapus: '+r.error.message;await load()}
 
@@ -210,7 +211,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button');i
  if(S.off&&(d.hdel||['btcadd','btcsave'].includes(a)||d.mng||d.edit||d.del||d.pay||d.unpay||d.deldebt||['addtx','xfer','addacc','adddebt','bk'].includes(a))){S.msg='Sedang offline. Hubungkan internet dulu untuk menyimpan atau mengubah data.';return render()}
  if(d.sp){S.space=d.sp;render()}
  else if(d.hdel)delHold(d.hdel)
- else if(a==='btcadd')openBtc();else if(a==='btcsave')saveBtc();else if(a==='btcref')fetchBtc();
+ else if(a==='btcopen')openHub();else if(a==='btcadd')openBtc();else if(a==='btcsave')saveBtc();else if(a==='btcref')fetchBtc();
  else if(a==='btcman'){const v=num(prompt('Masukkan harga 1 BTC dalam Rupiah')||'');if(v>0){S.btc={p:v,t:Date.now(),src:'manual'};S.btcErr='';try{localStorage.setItem('mf_btc',JSON.stringify(S.btc))}catch(x){}updPrice()}}
  else if(d.mng)openMng(d.mng)
  else if(d.edit)openTx(d.edit)
