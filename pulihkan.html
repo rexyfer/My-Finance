@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>My Finance - Pulihkan</title>
+<style>
+:root{--bg:#f2f2f7;--card:#fff;--tx:#1c1c1e;--sub:#8e8e93;--line:#e5e5ea;--in:#1f9d55;--out:#e0443a;--acc:#0a6e6e}
+@media(prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--tx:#f2f2f7;--sub:#98989f;--line:#2c2c2e;--in:#35c46f;--out:#ff6961;--acc:#4fd1c5}}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--tx);font:16px/1.4 -apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 0 calc(24px + env(safe-area-inset-bottom))}
+.wrap{max-width:480px;margin:0 auto;padding:12px 16px}
+a{color:var(--acc)}h1{font-size:28px;letter-spacing:-.5px;margin:6px 0 12px}
+.card{background:var(--card);border-radius:18px;padding:16px;margin-bottom:12px}
+.row{display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}.row:first-child{border-top:0}
+.sub{color:var(--sub);font-size:13px}.out{color:var(--out)}.in{color:var(--in)}
+input{width:100%;font:16px system-ui;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--tx);margin:10px 0}
+.btn{width:100%;border:0;border-radius:14px;padding:14px;font:600 16px system-ui;background:var(--acc);color:#fff;margin-bottom:8px}.btn.g{background:var(--line);color:var(--tx)}.btn:disabled{opacity:.5}
+.note{background:var(--line);border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+</style></head>
+<body><div class="wrap" id="app"></div>
+<script type="module">
+import {createClient} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+import {SUPABASE_URL,SUPABASE_KEY} from './config.js';
+const sb=createClient(SUPABASE_URL,SUPABASE_KEY),$=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const SPACES=['personal','business'],KINDS=['in','out','transfer_in','transfer_out','debt_in','debt_out'];
+const TB=['accounts','categories','debts','transactions','debt_payments','audit_log'];
+const TN={accounts:'Akun',categories:'Kategori',debts:'Utang/piutang',transactions:'Transaksi',debt_payments:'Cicilan utang/piutang',audit_log:'Jejak audit'};
+let S={st:'start',uid:null,plan:null,msg:'',busy:false};
+
+async function all(t){let o=[],f=0;for(;;){const r=await sb.from(t).select('*').order('id').range(f,f+999);if(r.error)throw r.error;o=o.concat(r.data);if(r.data.length<1000)return o;f+=1000}}
+const hid=async s=>{const h=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)));h[6]=h[6]&15|64;h[8]=h[8]&63|128;const x=[...h.slice(0,16)].map(b=>b.toString(16).padStart(2,'0')).join('');return x.slice(0,8)+'-'+x.slice(8,12)+'-'+x.slice(12,16)+'-'+x.slice(16,20)+'-'+x.slice(20,32)};
+const bad=m=>{throw new Error(m)};
+
+async function buildPlan(b){
+ const u=S.uid,cur={},has={},map={},plan={};
+ if(!b||b.app!=='My Finance'||b.version!==1)bad('Ini bukan berkas backup My Finance versi 1.');
+ for(const t of TB){cur[t]=await all(t);has[t]=new Set(cur[t].map(r=>r.id))}
+ const L=t=>Array.isArray(b[t])?b[t]:bad('Berkas tidak berisi data '+t+'.');
+ const nid=(t,old)=>has[t].has(old)?old:hid(u+'|'+t+'|'+old);
+ plan.accounts=[];
+ for(const r of L('accounts')){if(!SPACES.includes(r.space)||!r.name||!Number.isInteger(r.opening_balance))bad('Data akun tidak valid.');
+  const id=await nid('accounts',r.id);map[r.id]=id;
+  if(!has.accounts.has(id))plan.accounts.push({id,space:r.space,name:r.name,type:r.type||'Lainnya',opening_balance:r.opening_balance,is_active:r.is_active!==false,created_at:r.created_at})}
+ const ck=r=>r.space+'|'+r.kind+'|'+r.name,cc=new Map(cur.categories.map(r=>[ck(r),r.id]));plan.categories=[];
+ for(const r of L('categories')){if(!SPACES.includes(r.space)||!['in','out'].includes(r.kind)||!r.name)bad('Data kategori tidak valid.');
+  if(has.categories.has(r.id)){map[r.id]=r.id;continue}
+  if(cc.has(ck(r))){map[r.id]=cc.get(ck(r));continue}
+  const id=await nid('categories',r.id);map[r.id]=id;cc.set(ck(r),id);plan.categories.push({id,space:r.space,kind:r.kind,name:r.name,is_active:r.is_active!==false})}
+ plan.debts=[];
+ for(const r of L('debts')){if(!SPACES.includes(r.space)||!['payable','receivable'].includes(r.kind)||!r.party||!(r.amount>0))bad('Data utang tidak valid.');
+  const id=await nid('debts',r.id);map[r.id]=id;
+  if(!has.debts.has(id))plan.debts.push({id,space:r.space,kind:r.kind,party:r.party,amount:r.amount,start_date:r.start_date,due_date:r.due_date,note:r.note,created_at:r.created_at})}
+ plan.transactions=[];
+ for(const r of L('transactions')){if(!SPACES.includes(r.space)||!KINDS.includes(r.kind)||!Number.isInteger(r.amount)||r.amount<=0)bad('Data transaksi tidak valid.');
+  const id=await nid('transactions',r.id);map[r.id]=id;if(has.transactions.has(id))continue;
+  const acc=map[r.account_id];if(!acc)bad('Ada transaksi yang merujuk akun yang tidak ada di berkas.');
+  plan.transactions.push({id,space:r.space,account_id:acc,kind:r.kind,amount:r.amount,category_id:r.category_id?(map[r.category_id]||null):null,debt_id:r.debt_id?(map[r.debt_id]||null):null,transfer_group:r.transfer_group?await hid(u+'|g|'+r.transfer_group):null,note:r.note,occurred_at:r.occurred_at,request_id:r.request_id,created_at:r.created_at})}
+ plan.debt_payments=[];
+ for(const r of L('debt_payments')){const id=await nid('debt_payments',r.id);if(has.debt_payments.has(id))continue;
+  const d=map[r.debt_id],a=map[r.account_id],t=map[r.transaction_id];if(!d||!a||!t||!SPACES.includes(r.space)||!(r.amount>0))bad('Data cicilan tidak valid.');
+  plan.debt_payments.push({id,space:r.space,debt_id:d,account_id:a,amount:r.amount,paid_at:r.paid_at,transaction_id:t})}
+ plan.audit_log=[];
+ for(const r of L('audit_log')){const id=await nid('audit_log',r.id);if(!has.audit_log.has(id))plan.audit_log.push({id,action:String(r.action),detail:r.detail||{},created_at:r.created_at})}
+ return plan}
+
+async function run(){if(S.busy)return;S.busy=true;render();
+ for(const t of TB){const rows=S.plan[t];for(let i=0;i<rows.length;i+=200){const r=await sb.from(t).insert(rows.slice(i,i+200));
+  if(r.error){S.busy=false;S.st='preview';S.msg='Gagal memulihkan '+TN[t]+': '+r.error.message+'. Anda boleh mencoba lagi, bagian yang sudah masuk tidak akan digandakan.';return render()}}}
+ S.busy=false;S.st='done';render()}
+
+function render(){const A=$('app'),n=t=>S.plan?S.plan[t].length:0;
+ const head=`<a class="sub" href="./">← Kembali ke My Finance</a><h1>Pulihkan backup</h1>`;
+ if(S.st==='noauth')A.innerHTML=head+`<div class="card">Anda belum masuk. <a href="./">Buka halaman utama</a>, masuk, lalu kembali ke sini.</div>`;
+ else if(S.st==='start')A.innerHTML=head+`<div class="note">Pilih berkas backup (.json) yang Anda unduh sendiri dari My Finance. Pemulihan hanya <b>menambahkan</b> data yang belum ada. Data yang sudah ada tidak dihapus atau ditimpa. Jangan pulihkan berkas dari orang lain atau sumber yang tidak dikenal.</div><div class="card"><input type="file" id="file" accept=".json,application/json"><div class="out sub" id="msg">${esc(S.msg)}</div></div>`;
+ else if(S.st==='preview'){const tot=TB.reduce((s,t)=>s+n(t),0);
+  A.innerHTML=head+`<div class="card">${TB.map(t=>`<div class="row"><span>${TN[t]}</span><b>${n(t)} akan ditambahkan</b></div>`).join('')}</div>${tot?`<button class="btn" id="go" ${S.busy?'disabled':''}>${S.busy?'Memulihkan...':'Pulihkan sekarang'}</button>`:`<div class="card">Semua data di berkas ini sudah ada. Tidak ada yang perlu dipulihkan.</div>`}<button class="btn g" id="cancel">Pilih berkas lain</button><div class="out sub">${esc(S.msg)}</div>`}
+ else A.innerHTML=head+`<div class="card"><b class="in">Selesai.</b> Data dipulihkan. <a href="./">Buka halaman utama</a> dan periksa saldo serta transaksi Anda.</div>`}
+
+document.addEventListener('change',async e=>{if(e.target.id!=='file')return;const f=e.target.files[0];if(!f)return;
+ S.msg='';if(f.size>2e7){S.msg='Berkas terlalu besar.';return render()}
+ try{const b=JSON.parse(await f.text());S.msg='';S.plan=await buildPlan(b);S.st='preview'}catch(x){S.msg='Gagal membaca berkas: '+x.message;S.st='start'}render()});
+document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.id==='go')run();else if(b.id==='cancel'){S.st='start';S.plan=null;S.msg='';render()}});
+(async()=>{const s=await sb.auth.getSession();if(!s.data.session){S.st='noauth';return render()}S.uid=s.data.session.user.id;render()})();
+</script></body></html>
