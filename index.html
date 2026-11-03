@@ -20,6 +20,7 @@ h1{font-size:28px;letter-spacing:-.5px;margin:6px 0 12px}h2{font-size:17px;margi
 input,select{width:100%;font:16px system-ui;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--tx);margin-bottom:10px}
 .btn{width:100%;border:0;border-radius:14px;padding:14px;font:600 16px system-ui;background:var(--acc);color:#fff;margin-bottom:8px}
 .btn.g{background:var(--line);color:var(--tx)}.btn:disabled{opacity:.5}
+a.btn{display:block;text-align:center;text-decoration:none}
 .del{border:0;background:none;color:var(--out);font-size:13px}
 .sheet{position:fixed;inset:0;background:#0006;display:none;align-items:flex-end;z-index:9}.sheet.show{display:flex}
 .sheet>div{background:var(--bg);width:100%;max-width:480px;margin:0 auto;border-radius:22px 22px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
@@ -38,7 +39,7 @@ const num=v=>parseInt(String(v).replace(/\D/g,''),10)||0;
 const SP={personal:'Personal',business:'Business'};
 const KL={in:'Pemasukan',out:'Pengeluaran',transfer_in:'Transfer masuk',transfer_out:'Transfer keluar',debt_in:'Penerimaan piutang',debt_out:'Pembayaran utang'};
 const PLUS=['in','transfer_in','debt_in'];
-let S={space:'personal',user:null,acc:[],cat:[],tx:[],debts:[],pays:[],msg:'',busy:false,req:null,pid:null};
+let S={space:'personal',user:null,acc:[],cat:[],tx:[],debts:[],pays:[],msg:'',busy:false,req:null,pid:null,eid:null};
 const openS=h=>{$('sf').innerHTML=h;$('sheet').classList.add('show')},closeS=()=>$('sheet').classList.remove('show'),fm=m=>{if($('fm'))$('fm').textContent=m},amsg=m=>{if($('msg'))$('msg').textContent=m};
 const opts=(arr,f)=>arr.map(f).join('');
 const paidOf=d=>S.pays.filter(p=>p.debt_id===d.id).reduce((s,p)=>s+p.amount,0);
@@ -69,12 +70,12 @@ function render(){
  $('app').innerHTML=`<div class="seg">${Object.keys(SP).map(k=>`<button data-sp="${k}" class="${S.space===k?'on':''}">${SP[k]}</button>`).join('')}</div>
 <div class="hero"><span>Total saldo</span><div class="big">${rp(total)}</div><span>Arus kas bersih bulan ini: ${rp(i-o)}</span></div>
 <div class="grid"><div class="card"><span class="sub">Pemasukan</span><div class="in"><b>${rp(i)}</b></div></div><div class="card"><span class="sub">Pengeluaran</span><div class="out"><b>${rp(o)}</b></div></div></div>
-<button class="btn" data-a="addtx">+ Tambah transaksi</button><button class="btn g" data-a="xfer">Transfer</button>
+<button class="btn" data-a="addtx">+ Tambah transaksi</button><button class="btn g" data-a="xfer">Transfer</button><a class="btn g" href="./laporan.html">Grafik &amp; laporan</a>
 <h2>Akun</h2><div class="card">${opts(A,a=>`<div class="row"><div><b>${esc(a.name)}</b><div class="sub">${esc(a.type)}</div></div><b>${rp(Number(a.balance))}</b></div>`)||'<p class="sub">Belum ada akun. Tekan Tambah akun.</p>'}</div>
 <button class="btn g" data-a="addacc">Tambah akun</button>
 <h2>Utang dan piutang</h2><div class="grid"><div class="card"><span class="sub">Utang saya</span><div class="out"><b>${rp(rem('payable'))}</b></div></div><div class="card"><span class="sub">Piutang</span><div class="in"><b>${rp(rem('receivable'))}</b></div></div></div>
 ${opts(D,debtCard)}<button class="btn g" data-a="adddebt">Tambah utang/piutang</button>
-<h2>Transaksi terbaru</h2><div class="card">${opts(T.slice(0,20),x=>`<div class="row"><div><b>${cn(x)}</b><div class="sub">${new Date(x.occurred_at).toLocaleDateString('id-ID',{day:'numeric',month:'short'})} · ${an(x.account_id)}${x.note?' · '+esc(x.note):''}</div></div><div style="text-align:right"><b class="${x.kind==='in'?'in':x.kind==='out'?'out':''}">${PLUS.includes(x.kind)?'+':'-'}${rp(x.amount)}</b><div><button class="del" data-del="${x.id}">Hapus</button></div></div></div>`)||'<p class="sub">Belum ada transaksi.</p>'}</div>
+<h2>Transaksi terbaru</h2><div class="card">${opts(T.slice(0,20),x=>`<div class="row"><div><b>${cn(x)}</b><div class="sub">${new Date(x.occurred_at).toLocaleDateString('id-ID',{day:'numeric',month:'short'})} · ${an(x.account_id)}${x.note?' · '+esc(x.note):''}</div></div><div style="text-align:right"><b class="${x.kind==='in'?'in':x.kind==='out'?'out':''}">${PLUS.includes(x.kind)?'+':'-'}${rp(x.amount)}</b><div>${x.kind==='in'||x.kind==='out'?`<button class="del" data-edit="${x.id}" style="color:var(--acc);margin-right:10px">Ubah</button>`:''}<button class="del" data-del="${x.id}">Hapus</button></div></div></div>`)||'<p class="sub">Belum ada transaksi.</p>'}</div>
 <button class="btn g" data-a="bk">Unduh backup (JSON)</button><button class="btn g" data-a="out">Keluar</button><div class="msg">${esc(S.msg)}</div>`}
 
 async function auth(m){const email=$('em').value.trim(),password=$('pw').value;
@@ -83,13 +84,15 @@ async function auth(m){const email=$('em').value.trim(),password=$('pw').value;
  if(r.error)return amsg(r.error.message);
  if(m==='up'&&!r.data.session)amsg('Cek email Anda, tekan tautan konfirmasi, lalu kembali ke sini dan masuk.')}
 
-function openTx(){const A=S.acc.filter(a=>a.space===S.space);if(!A.length){S.msg='Tambahkan akun dulu sebelum mencatat transaksi.';return render()}
- S.req=crypto.randomUUID();
- openS(`<h2>Transaksi baru</h2><select id="kind"><option value="out">Pengeluaran</option><option value="in">Pemasukan</option></select><input id="amt" inputmode="numeric" placeholder="Nominal (Rp)" autocomplete="off"><select id="cat"></select><select id="acs">${opts(A,a=>`<option value="${a.id}">${esc(a.name)}</option>`)}</select><input id="note" placeholder="Catatan (opsional)"><div class="msg" id="fm"></div><button class="btn" id="sv" data-a="savetx">Simpan transaksi</button><button class="btn g" data-a="close">Batal</button>`);fillCat()}
+function openTx(id){const A=S.acc.filter(a=>a.space===S.space);if(!A.length){S.msg='Tambahkan akun dulu sebelum mencatat transaksi.';return render()}
+ const x=id?S.tx.find(t=>t.id===id):null;S.eid=x?x.id:null;S.req=crypto.randomUUID();
+ openS(`<h2>${x?'Ubah transaksi':'Transaksi baru'}</h2><select id="kind"><option value="out">Pengeluaran</option><option value="in">Pemasukan</option></select><input id="amt" inputmode="numeric" placeholder="Nominal (Rp)" autocomplete="off"><select id="cat"></select><select id="acs">${opts(A,a=>`<option value="${a.id}">${esc(a.name)}</option>`)}</select><input id="note" placeholder="Catatan (opsional)"><div class="msg" id="fm"></div><button class="btn" id="sv" data-a="savetx">${x?'Simpan perubahan':'Simpan transaksi'}</button><button class="btn g" data-a="close">Batal</button>`);
+ if(x){$('kind').value=x.kind;fillCat();$('amt').value=x.amount;$('cat').value=x.category_id||'';$('acs').value=x.account_id;$('note').value=x.note||''}else fillCat()}
 function fillCat(){$('cat').innerHTML=opts(S.cat.filter(c=>c.space===S.space&&c.kind===$('kind').value),c=>`<option value="${c.id}">${esc(c.name)}</option>`)}
 async function saveTx(){if(S.busy)return;const amount=num($('amt').value);if(!amount)return fm('Isi nominal lebih dari nol.');
  S.busy=true;$('sv').disabled=true;
- const r=await sb.from('transactions').insert({space:S.space,account_id:$('acs').value,kind:$('kind').value,amount,category_id:$('cat').value||null,note:$('note').value.trim()||null,request_id:S.req});
+ const f={account_id:$('acs').value,kind:$('kind').value,amount,category_id:$('cat').value||null,note:$('note').value.trim()||null},
+ r=S.eid?await sb.from('transactions').update(f).eq('id',S.eid):await sb.from('transactions').insert({...f,space:S.space,request_id:S.req});
  S.busy=false;if($('sv'))$('sv').disabled=false;
  if(r.error&&r.error.code!=='23505')return fm('Gagal menyimpan: '+r.error.message+'. Coba lagi.');
  closeS();await load()}
@@ -139,6 +142,7 @@ async function backup(){const o={app:'My Finance',version:1,exported_at:new Date
 
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const a=b.dataset.a,d=b.dataset;
  if(d.sp){S.space=d.sp;render()}
+ else if(d.edit)openTx(d.edit)
  else if(d.del)delTx(d.del)
  else if(d.pay)openPay(d.pay)
  else if(d.unpay){if(confirm('Batalkan pembayaran ini? Saldo akun akan dikembalikan.')){const r=await sb.from('transactions').delete().eq('id',d.unpay);if(r.error)S.msg='Gagal membatalkan: '+r.error.message;await load()}}
