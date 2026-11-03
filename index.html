@@ -46,7 +46,7 @@ const num=v=>parseInt(String(v).replace(/\D/g,''),10)||0;
 const SP={personal:'Personal',business:'Business'};
 const KL={in:'Pemasukan',out:'Pengeluaran',transfer_in:'Transfer masuk',transfer_out:'Transfer keluar',debt_in:'Penerimaan piutang',debt_out:'Pembayaran utang'};
 const PLUS=['in','transfer_in','debt_in'];
-let S={space:'personal',user:null,acc:[],cat:[],tx:[],debts:[],pays:[],msg:'',busy:false,req:null,pid:null,eid:null};
+let S={space:'personal',user:null,acc:[],accAll:[],mid:null,cat:[],tx:[],debts:[],pays:[],msg:'',busy:false,req:null,pid:null,eid:null};
 const openS=h=>{$('sf').innerHTML=h;$('sheet').classList.add('show')},closeS=()=>$('sheet').classList.remove('show'),fm=m=>{if($('fm'))$('fm').textContent=m},amsg=m=>{if($('msg'))$('msg').textContent=m};
 const opts=(arr,f)=>arr.map(f).join('');
 const paidOf=d=>S.pays.filter(p=>p.debt_id===d.id).reduce((s,p)=>s+p.amount,0);
@@ -60,7 +60,7 @@ async function load(){
   sb.from('debts').select('*').order('created_at',{ascending:false}),
   sb.from('debt_payments').select('*').order('paid_at',{ascending:false})]);
  const e=a.error||c.error||t.error||d.error||p.error;S.msg=e?'Gagal memuat data: '+e.message:'';
- S.acc=a.data||[];S.cat=c.data||[];S.tx=t.data||[];S.debts=d.data||[];S.pays=p.data||[];render()}
+ S.accAll=a.data||[];S.acc=S.accAll.filter(x=>x.is_active);S.cat=c.data||[];S.tx=t.data||[];S.debts=d.data||[];S.pays=p.data||[];render()}
 
 function debtCard(d){const pd=paidOf(d),r=d.amount-pd,pay=d.kind==='payable',st=r<=0?'Lunas':pd>0?'Sebagian lunas':'Belum lunas',
  dd=r>0&&d.due_date?Math.ceil((new Date(d.due_date+'T00:00')-new Date().setHours(0,0,0,0))/864e5):null;
@@ -73,13 +73,13 @@ function render(){
  sum=k=>T.filter(x=>x.kind===k&&inM(x)).reduce((s,x)=>s+x.amount,0),
  total=A.reduce((s,a)=>s+Number(a.balance),0),i=sum('in'),o=sum('out'),
  rem=k=>D.filter(d=>d.kind===k).reduce((s,d)=>s+d.amount-paidOf(d),0),
- an=id=>esc((S.acc.find(a=>a.id===id)||{}).name||'-'),
+ an=id=>esc((S.accAll.find(a=>a.id===id)||{}).name||'-'),
  cn=x=>esc((S.cat.find(c=>c.id===x.category_id)||{}).name||KL[x.kind]);
  $('app').innerHTML=`<div class="seg">${Object.keys(SP).map(k=>`<button data-sp="${k}" class="${S.space===k?'on':''}">${SP[k]}</button>`).join('')}</div>
 <div class="hero"><span>Total saldo</span><div class="big">${rp(total)}</div><span>Arus kas bersih bulan ini: ${rp(i-o)}</span></div>
 <div class="grid"><div class="card"><span class="sub">Pemasukan</span><div class="in"><b>${rp(i)}</b></div></div><div class="card"><span class="sub">Pengeluaran</span><div class="out"><b>${rp(o)}</b></div></div></div>
 <button class="btn" data-a="addtx">+ Tambah transaksi</button><button class="btn g" data-a="xfer">Transfer</button><a class="btn g" href="./laporan.html">Grafik &amp; laporan</a>
-<h2>Akun</h2><div class="card">${opts(A,a=>`<div class="row"><div><b>${esc(a.name)}</b><div class="sub">${esc(a.type)}</div></div><b>${rp(Number(a.balance))}</b></div>`)||'<p class="sub">Belum ada akun. Tekan Tambah akun.</p>'}</div>
+<h2>Akun</h2><div class="card">${opts(A,a=>`<div class="row"><div><b>${esc(a.name)}</b><div class="sub">${esc(a.type)}</div></div><div style="text-align:right"><b>${rp(Number(a.balance))}</b><div><button class="del" data-mng="${a.id}" style="color:var(--acc)">Kelola</button></div></div></div>`)||'<p class="sub">Belum ada akun. Tekan Tambah akun.</p>'}</div>
 <button class="btn g" data-a="addacc">Tambah akun</button>
 <h2>Utang dan piutang</h2><div class="grid"><div class="card"><span class="sub">Utang saya</span><div class="out"><b>${rp(rem('payable'))}</b></div></div><div class="card"><span class="sub">Piutang</span><div class="in"><b>${rp(rem('receivable'))}</b></div></div></div>
 ${opts(D,debtCard)}<button class="btn g" data-a="adddebt">Tambah utang/piutang</button>
@@ -136,6 +136,20 @@ async function savePay(){if(S.busy)return;const amt=num($('pa').value),d=S.debts
  const r=await sb.rpc('pay_debt',{p_debt:S.pid,p_account:$('pc').value,p_amount:amt,p_request:S.req});
  S.busy=false;if($('sv'))$('sv').disabled=false;
  if(r.error)return fm(r.error.message);closeS();await load()}
+function openMng(id){const a=S.acc.find(x=>x.id===id);if(!a)return;S.mid=id;
+ openS(`<h2>Kelola akun</h2><input id="mn" value="${esc(a.name)}" placeholder="Nama akun"><select id="mt">${['Tunai','Bank','E-wallet','Lainnya'].map(t=>`<option${t===a.type?' selected':''}>${t}</option>`).join('')}</select><div class="sub" style="margin-bottom:8px">Saldo sekarang: ${rp(Number(a.balance))}</div><div class="msg" id="fm"></div><button class="btn" id="sv" data-a="mngsave">Simpan perubahan</button><button class="btn g" data-a="mngoff">Nonaktifkan (sembunyikan, riwayat tetap)</button><button class="btn g" data-a="mngdel" style="color:var(--out)">Hapus permanen</button><button class="btn g" data-a="close">Batal</button><div class="sub">Nonaktifkan hanya bisa jika saldo akun Rp0. Hapus permanen hanya bisa jika akun belum punya transaksi, utang, atau pembayaran.</div>`)}
+async function mngSave(){if(S.busy)return;const name=$('mn').value.trim();if(!name)return fm('Isi nama akun.');
+ S.busy=true;const r=await sb.from('accounts').update({name,type:$('mt').value}).eq('id',S.mid);S.busy=false;
+ if(r.error)return fm('Gagal menyimpan: '+r.error.message);closeS();await load()}
+async function mngOff(){if(S.busy)return;const a=S.acc.find(x=>x.id===S.mid);
+ if(Number(a.balance)!==0)return fm('Saldo harus Rp0 dulu. Pindahkan saldo lewat Transfer.');
+ if(!confirm('Nonaktifkan akun '+a.name+'? Akun disembunyikan, riwayat tetap ada.'))return;
+ S.busy=true;const r=await sb.from('accounts').update({is_active:false}).eq('id',S.mid);S.busy=false;
+ if(r.error)return fm('Gagal: '+r.error.message);closeS();await load()}
+async function mngDel(){if(S.busy)return;const a=S.acc.find(x=>x.id===S.mid);
+ if(!confirm('Hapus permanen akun '+a.name+'? Tidak bisa dibatalkan.'))return;
+ S.busy=true;const r=await sb.from('accounts').delete().eq('id',S.mid);S.busy=false;
+ if(r.error)return fm('Tidak bisa dihapus karena akun ini sudah punya riwayat. Gunakan Nonaktifkan. ('+r.error.message+')');closeS();await load()}
 async function delDebt(id){if(!confirm('Hapus catatan ini?'))return;const r=await sb.from('debts').delete().eq('id',id);if(r.error)S.msg='Gagal menghapus: '+r.error.message;await load()}
 
 async function delTx(id){const x=S.tx.find(t=>t.id===id);if(!x)return;
@@ -150,6 +164,7 @@ async function backup(){const o={app:'My Finance',version:1,exported_at:new Date
 
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const a=b.dataset.a,d=b.dataset;
  if(d.sp){S.space=d.sp;render()}
+ else if(d.mng)openMng(d.mng)
  else if(d.edit)openTx(d.edit)
  else if(d.del)delTx(d.del)
  else if(d.pay)openPay(d.pay)
@@ -158,10 +173,11 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button');i
  else if(a==='in'||a==='up')auth(a)
  else if(a==='addtx')openTx();else if(a==='xfer')openXf();else if(a==='addacc')openAcc();else if(a==='adddebt')openDebt()
  else if(a==='savetx')saveTx();else if(a==='savexf')saveXf();else if(a==='saveacc')saveAcc();else if(a==='savedebt')saveDebt();else if(a==='savepay')savePay()
+ else if(a==='mngsave')mngSave();else if(a==='mngoff')mngOff();else if(a==='mngdel')mngDel();
  else if(a==='close')closeS();else if(a==='bk')backup();else if(a==='out')await sb.auth.signOut()});
 document.addEventListener('change',e=>{if(e.target.id==='kind')fillCat()});
 
 async function start(){const r=await sb.rpc('seed_default_categories');if(r.error)S.msg='Kategori bawaan gagal dibuat: '+r.error.message;await load()}
 if(!OK)$('app').innerHTML='<h1>My Finance</h1><div class="card">Isi dulu file config.js dengan Project URL dan kunci publishable.</div>';
-else sb.auth.onAuthStateChange((ev,ses)=>{S.user=ses?.user||null;if(!S.user){S.acc=[];S.cat=[];S.tx=[];S.debts=[];S.pays=[];S.msg=''}setTimeout(()=>S.user?start():render(),0)});
+else sb.auth.onAuthStateChange((ev,ses)=>{S.user=ses?.user||null;if(!S.user){S.acc=[];S.accAll=[];S.cat=[];S.tx=[];S.debts=[];S.pays=[];S.msg=''}setTimeout(()=>S.user?start():render(),0)});
 </script></body></html>
