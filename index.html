@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>My Finance</title>
+<style>
+:root{--bg:#f2f2f7;--card:#fff;--tx:#1c1c1e;--sub:#8e8e93;--line:#e5e5ea;--in:#1f9d55;--out:#e0443a;--acc:#0a6e6e}
+@media(prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--tx:#f2f2f7;--sub:#98989f;--line:#2c2c2e;--in:#35c46f;--out:#ff6961;--acc:#4fd1c5}.hero{color:#04201f!important}}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--tx);font:16px/1.4 -apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 0 calc(24px + env(safe-area-inset-bottom))}
+.wrap{max-width:480px;margin:0 auto;padding:12px 16px}
+h1{font-size:28px;letter-spacing:-.5px;margin:6px 0 12px}h2{font-size:17px;margin:20px 0 8px}
+.card{background:var(--card);border-radius:18px;padding:16px;margin-bottom:12px}
+.hero{background:var(--acc);color:#fff;border-radius:22px;padding:20px;margin-bottom:12px}
+.big{font-size:34px;font-weight:700;letter-spacing:-1px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}.row:first-child{border-top:0}
+.sub{color:var(--sub);font-size:13px}.in{color:var(--in)}.out{color:var(--out)}
+.seg{display:flex;background:var(--line);border-radius:10px;padding:2px;margin-bottom:14px}
+.seg button{flex:1;border:0;background:none;color:var(--tx);padding:8px;border-radius:8px;font:600 14px system-ui}.seg button.on{background:var(--card)}
+input,select{width:100%;font:16px system-ui;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--tx);margin-bottom:10px}
+.btn{width:100%;border:0;border-radius:14px;padding:14px;font:600 16px system-ui;background:var(--acc);color:#fff;margin-bottom:8px}
+.btn.g{background:var(--line);color:var(--tx)}.btn:disabled{opacity:.5}
+.del{border:0;background:none;color:var(--out);font-size:13px}
+.sheet{position:fixed;inset:0;background:#0006;display:none;align-items:flex-end;z-index:9}.sheet.show{display:flex}
+.sheet>div{background:var(--bg);width:100%;max-width:480px;margin:0 auto;border-radius:22px 22px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
+.msg{color:var(--out);font-size:14px;margin:6px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}.grid .card{margin:0}
+</style></head>
+<body><div class="wrap" id="app"></div><div class="sheet" id="sheet"><div id="sf"></div></div>
+<script type="module">
+import {createClient} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+import {SUPABASE_URL,SUPABASE_KEY} from './config.js';
+const OK=SUPABASE_URL.startsWith('https://'),sb=OK?createClient(SUPABASE_URL,SUPABASE_KEY):null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rp=n=>(n<0?'-':'')+'Rp'+Math.abs(n).toLocaleString('id-ID');
+const num=v=>parseInt(String(v).replace(/\D/g,''),10)||0;
+const SP={personal:'Personal',business:'Business'};
+const KL={in:'Pemasukan',out:'Pengeluaran',transfer_in:'Transfer masuk',transfer_out:'Transfer keluar',debt_in:'Penerimaan piutang',debt_out:'Pembayaran utang'};
+const PLUS=['in','transfer_in','debt_in'];
+let S={space:'personal',user:null,acc:[],cat:[],tx:[],msg:'',busy:false,req:null};
+const openS=h=>{$('sf').innerHTML=h;$('sheet').classList.add('show')},closeS=()=>$('sheet').classList.remove('show'),fm=m=>{if($('fm'))$('fm').textContent=m},amsg=m=>{if($('msg'))$('msg').textContent=m};
+const opts=(arr,f)=>arr.map(f).join('');
+
+async function load(){
+ const [a,c,t]=await Promise.all([
+  sb.from('account_balances').select('*').order('name'),
+  sb.from('categories').select('*').eq('is_active',true).order('name'),
+  sb.from('transactions').select('*').order('occurred_at',{ascending:false}).limit(500)]);
+ const e=a.error||c.error||t.error;S.msg=e?'Gagal memuat data: '+e.message:'';
+ S.acc=a.data||[];S.cat=c.data||[];S.tx=t.data||[];render()}
+
+function render(){
+ if(!S.user){$('app').innerHTML=`<h1>My Finance</h1><div class="card"><input id="em" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Kata sandi (minimal 8 karakter)" autocomplete="current-password"><button class="btn" data-a="in">Masuk</button><button class="btn g" data-a="up">Daftar akun baru</button><div class="msg" id="msg">${esc(S.msg)}</div></div>`;return}
+ const A=S.acc.filter(a=>a.space===S.space),T=S.tx.filter(x=>x.space===S.space),n=new Date(),
+ inM=x=>{const d=new Date(x.occurred_at);return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()},
+ sum=k=>T.filter(x=>x.kind===k&&inM(x)).reduce((s,x)=>s+x.amount,0),
+ total=A.reduce((s,a)=>s+Number(a.balance),0),i=sum('in'),o=sum('out'),
+ an=id=>esc((S.acc.find(a=>a.id===id)||{}).name||'-'),
+ cn=x=>esc((S.cat.find(c=>c.id===x.category_id)||{}).name||KL[x.kind]);
+ $('app').innerHTML=`<div class="seg">${Object.keys(SP).map(k=>`<button data-sp="${k}" class="${S.space===k?'on':''}">${SP[k]}</button>`).join('')}</div>
+<div class="hero"><span>Total saldo</span><div class="big">${rp(total)}</div><span>Arus kas bersih bulan ini: ${rp(i-o)}</span></div>
+<div class="grid"><div class="card"><span class="sub">Pemasukan</span><div class="in"><b>${rp(i)}</b></div></div><div class="card"><span class="sub">Pengeluaran</span><div class="out"><b>${rp(o)}</b></div></div></div>
+<button class="btn" data-a="addtx">+ Tambah transaksi</button><button class="btn g" data-a="xfer">Transfer</button>
+<h2>Akun</h2><div class="card">${opts(A,a=>`<div class="row"><div><b>${esc(a.name)}</b><div class="sub">${esc(a.type)}</div></div><b>${rp(Number(a.balance))}</b></div>`)||'<p class="sub">Belum ada akun. Tekan Tambah akun.</p>'}</div>
+<button class="btn g" data-a="addacc">Tambah akun</button>
+<h2>Transaksi terbaru</h2><div class="card">${opts(T.slice(0,20),x=>`<div class="row"><div><b>${cn(x)}</b><div class="sub">${new Date(x.occurred_at).toLocaleDateString('id-ID',{day:'numeric',month:'short'})} · ${an(x.account_id)}${x.note?' · '+esc(x.note):''}</div></div><div style="text-align:right"><b class="${x.kind==='in'?'in':x.kind==='out'?'out':''}">${PLUS.includes(x.kind)?'+':'-'}${rp(x.amount)}</b><div><button class="del" data-del="${x.id}">Hapus</button></div></div></div>`)||'<p class="sub">Belum ada transaksi.</p>'}</div>
+<button class="btn g" data-a="bk">Unduh backup (JSON)</button><button class="btn g" data-a="out">Keluar</button><div class="msg">${esc(S.msg)}</div>`}
+
+async function auth(m){const email=$('em').value.trim(),password=$('pw').value;
+ if(!email||password.length<8)return amsg('Isi email dan kata sandi (minimal 8 karakter).');
+ const r=m==='up'?await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}}):await sb.auth.signInWithPassword({email,password});
+ if(r.error)return amsg(r.error.message);
+ if(m==='up'&&!r.data.session)amsg('Cek email Anda, tekan tautan konfirmasi, lalu kembali ke sini dan masuk.')}
+
+function openTx(){const A=S.acc.filter(a=>a.space===S.space);if(!A.length){S.msg='Tambahkan akun dulu sebelum mencatat transaksi.';return render()}
+ S.req=crypto.randomUUID();
+ openS(`<h2>Transaksi baru</h2><select id="kind"><option value="out">Pengeluaran</option><option value="in">Pemasukan</option></select><input id="amt" inputmode="numeric" placeholder="Nominal (Rp)" autocomplete="off"><select id="cat"></select><select id="acs">${opts(A,a=>`<option value="${a.id}">${esc(a.name)}</option>`)}</select><input id="note" placeholder="Catatan (opsional)"><div class="msg" id="fm"></div><button class="btn" id="sv" data-a="savetx">Simpan transaksi</button><button class="btn g" data-a="close">Batal</button>`);fillCat()}
+function fillCat(){$('cat').innerHTML=opts(S.cat.filter(c=>c.space===S.space&&c.kind===$('kind').value),c=>`<option value="${c.id}">${esc(c.name)}</option>`)}
+async function saveTx(){if(S.busy)return;const amount=num($('amt').value);if(!amount)return fm('Isi nominal lebih dari nol.');
+ S.busy=true;$('sv').disabled=true;
+ const r=await sb.from('transactions').insert({space:S.space,account_id:$('acs').value,kind:$('kind').value,amount,category_id:$('cat').value||null,note:$('note').value.trim()||null,request_id:S.req});
+ S.busy=false;if($('sv'))$('sv').disabled=false;
+ if(r.error&&r.error.code!=='23505')return fm('Gagal menyimpan: '+r.error.message+'. Coba lagi.');
+ closeS();await load()}
+
+function openAcc(){openS(`<h2>Akun baru</h2><input id="an" placeholder="Nama akun, mis. BCA"><select id="at"><option>Tunai</option><option>Bank</option><option>E-wallet</option><option>Lainnya</option></select><input id="ao" inputmode="numeric" placeholder="Saldo awal (Rp)" autocomplete="off"><div class="msg" id="fm"></div><button class="btn" id="sv" data-a="saveacc">Simpan akun</button><button class="btn g" data-a="close">Batal</button>`)}
+async function saveAcc(){if(S.busy)return;const name=$('an').value.trim();if(!name)return fm('Isi nama akun.');
+ S.busy=true;$('sv').disabled=true;
+ const r=await sb.from('accounts').insert({space:S.space,name,type:$('at').value,opening_balance:num($('ao').value)});
+ S.busy=false;if($('sv'))$('sv').disabled=false;
+ if(r.error)return fm('Gagal menyimpan: '+r.error.message);closeS();await load()}
+
+function openXf(){const A=S.acc.filter(a=>a.space===S.space);if(!A.length){S.msg='Tambahkan akun dulu.';return render()}
+ S.req=crypto.randomUUID();
+ openS(`<h2>Transfer</h2><select id="xf">${opts(A,a=>`<option value="${a.id}">Dari: ${esc(a.name)} (${rp(Number(a.balance))})</option>`)}</select><select id="xt"><option value="">Ke akun...</option>${opts(S.acc,a=>`<option value="${a.id}">${esc(a.name)} (${SP[a.space]})</option>`)}</select><input id="xa" inputmode="numeric" placeholder="Nominal (Rp)" autocomplete="off"><input id="xe" inputmode="numeric" placeholder="Biaya administrasi (opsional)"><input id="xn" placeholder="Catatan (opsional)"><div class="msg" id="fm"></div><button class="btn" id="sv" data-a="savexf">Simpan transfer</button><button class="btn g" data-a="close">Batal</button>`)}
+async function saveXf(){if(S.busy)return;const amt=num($('xa').value);if(!$('xt').value)return fm('Pilih akun tujuan.');if(!amt)return fm('Isi nominal.');
+ S.busy=true;$('sv').disabled=true;
+ const r=await sb.rpc('create_transfer',{p_from:$('xf').value,p_to:$('xt').value,p_amount:amt,p_fee:num($('xe').value),p_note:$('xn').value.trim()||null,p_request:S.req});
+ S.busy=false;if($('sv'))$('sv').disabled=false;
+ if(r.error)return fm(r.error.message);closeS();await load()}
+
+async function delTx(id){const x=S.tx.find(t=>t.id===id);if(!x)return;
+ if(!confirm(x.transfer_group?'Hapus transfer ini? Kedua sisi pencatatan akan dihapus.':'Hapus transaksi ini?'))return;
+ const q=sb.from('transactions').delete(),r=await(x.transfer_group?q.eq('transfer_group',x.transfer_group):q.eq('id',id));
+ if(r.error)S.msg='Gagal menghapus: '+r.error.message;await load()}
+
+async function backup(){const o={app:'My Finance',version:1,exported_at:new Date().toISOString()};
+ for(const n of ['accounts','categories','debts','transactions','debt_payments','audit_log']){const r=await sb.from(n).select('*');if(r.error){S.msg='Backup gagal: '+r.error.message;return render()}o[n]=r.data}
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(o,null,2)],{type:'application/json'}));
+ a.download='my-finance-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove()}
+
+document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const a=b.dataset.a;
+ if(b.dataset.sp){S.space=b.dataset.sp;render()}
+ else if(b.dataset.del)delTx(b.dataset.del)
+ else if(a==='in'||a==='up')auth(a)
+ else if(a==='addtx')openTx();else if(a==='xfer')openXf();else if(a==='addacc')openAcc()
+ else if(a==='savetx')saveTx();else if(a==='savexf')saveXf();else if(a==='saveacc')saveAcc()
+ else if(a==='close')closeS();else if(a==='bk')backup();else if(a==='out')await sb.auth.signOut()});
+document.addEventListener('change',e=>{if(e.target.id==='kind')fillCat()});
+
+async function start(){const r=await sb.rpc('seed_default_categories');if(r.error)S.msg='Kategori bawaan gagal dibuat: '+r.error.message;await load()}
+if(!OK)$('app').innerHTML='<h1>My Finance</h1><div class="card">Isi dulu file config.js dengan Project URL dan kunci publishable.</div>';
+else sb.auth.onAuthStateChange((ev,ses)=>{S.user=ses?.user||null;if(!S.user){S.acc=[];S.cat=[];S.tx=[];S.msg=''}setTimeout(()=>S.user?start():render(),0)});
+</script></body></html>
